@@ -1,0 +1,32 @@
+[
+  {
+    "id": "shortener-1",
+    "name": "GPLinks",
+    "apiUrl": "https://gplinks.in/api",
+    "apiKey": "",
+    "baseUrl": "https://gplinks.co",
+    "status": "connected",
+    "enabled": true,
+    "isActive": true
+  },
+  {
+    "id": "shortener-2",
+    "name": "Droplink",
+    "apiUrl": "https://droplink.co/api",
+    "apiKey": "",
+    "baseUrl": "https://droplink.co",
+    "status": "ready",
+    "enabled": true,
+    "isActive": false
+  },
+  {
+    "id": "shortener-3",
+    "name": "ShrinkEarn",
+    "apiUrl": "https://shrinkearn.com/api",
+    "apiKey": "",
+    "baseUrl": "https://shrinkearn.com",
+    "status": "ready",
+    "enabled": true,
+    "isActive": false
+  }
+]

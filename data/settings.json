@@ -1,0 +1,15 @@
+{
+  "telegramBotToken": "",
+  "telegramBotUsername": "",
+  "howToDownloadUrl": "https://t.me/MovaDetaHowToDownload",
+  "howToDownloadEnabled": true,
+  "tmdbApiKey": "",
+  "defaultLanguage": "Hindi",
+  "defaultGenres": ["#Action", "#Thriller"],
+  "autoPreview": true,
+  "autoClearForm": false,
+  "pinLockEnabled": false,
+  "pinCode": "",
+  "timezone": "Asia/Dhaka",
+  "isDemoMode": false
+}

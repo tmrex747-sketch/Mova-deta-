@@ -1,0 +1,35 @@
+# InfinityFree / Apache Web Hosting Configuration
+# Mova Deta Telegram Content Publisher
+
+DirectoryIndex index.html index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Allow direct access to PHP backend APIs, uploads, cron runners, and assets
+  RewriteRule ^api/ - [L]
+  RewriteRule ^uploads/ - [L]
+  RewriteRule ^cron/ - [L]
+  RewriteRule ^assets/ - [L]
+
+  # 2. If the requested file or folder actually exists, serve it directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. Fallback all SPA routes to index.html
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Ensure proper MIME types
+<IfModule mod_mime.c>
+  AddType application/javascript .js .mjs
+  AddType text/javascript .js
+  AddType text/css .css
+  AddType application/json .json
+  AddType image/svg+xml .svg
+  AddType image/webp .webp
+  AddType image/png .png
+  AddType image/jpeg .jpg .jpeg
+</IfModule>
