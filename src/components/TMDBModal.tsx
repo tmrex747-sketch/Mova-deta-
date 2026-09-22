@@ -13,6 +13,8 @@ interface TMDBModalProps {
     imdbRating: string;
     genres: string[];
     backdropUrl: string;
+    id?: number;
+    backdrops?: string[];
   }) => void;
 }
 
@@ -221,7 +223,9 @@ export const TMDBModal: React.FC<TMDBModalProps> = ({
                             year: movie.year || new Date().getFullYear().toString(),
                             imdbRating: movie.imdb_rating || '7.5',
                             genres: movie.genres || ['#Action', '#Thriller'],
-                            backdropUrl: img
+                            backdropUrl: img,
+                            id: movie.id,
+                            backdrops: movie.backdrops
                           });
                           onClose();
                         }}

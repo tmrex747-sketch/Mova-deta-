@@ -497,6 +497,63 @@ export const api = {
     return { results: filtered, source: 'magic_library', cleanedQuery: cleaned };
   },
 
+  // 5b. Fetch multiple 16:9 backdrop images for a movie
+  async getTMDBMovieImages(movieIdOrTitle: string | number): Promise<string[]> {
+    const settings = clientStorage.getSettings();
+    const images: string[] = [];
+
+    // If TMDB API key is available and we have a numeric movie ID
+    if (settings.tmdbApiKey && !isNaN(Number(movieIdOrTitle))) {
+      try {
+        const url = `https://api.themoviedb.org/3/movie/${movieIdOrTitle}/images?api_key=${encodeURIComponent(settings.tmdbApiKey)}`;
+        const r = await fetch(url);
+        if (r.ok) {
+          const data = await r.json();
+          if (data.backdrops && Array.isArray(data.backdrops)) {
+            data.backdrops.slice(0, 15).forEach((b: any) => {
+              if (b.file_path) {
+                images.push(`https://image.tmdb.org/t/p/w1280${b.file_path}`);
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Could not fetch TMDB images directly:', e);
+      }
+    }
+
+    // Server-side fallback or extra backdrops
+    try {
+      const q = new URLSearchParams();
+      q.set('action', 'images');
+      q.set('id', String(movieIdOrTitle));
+      const res = await safeFetch(`${API_BASE}/tmdb.php?${q.toString()}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.images && Array.isArray(json.images)) {
+          json.images.forEach((img: string) => {
+            if (!images.includes(img)) images.push(img);
+          });
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
+    // High quality backdrop fallback presets if none found
+    if (images.length === 0) {
+      images.push(
+        'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1280&q=80',
+        'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=1280&q=80',
+        'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1280&q=80',
+        'https://images.unsplash.com/photo-1478760329108-5c3ed9d495a0?auto=format&fit=crop&w=1280&q=80',
+        'https://images.unsplash.com/photo-1574267432553-4b4628081c31?auto=format&fit=crop&w=1280&q=80'
+      );
+    }
+
+    return images;
+  },
+
   // 6. Telegram Bot Gateway (Direct Telegram API calls support CORS for client browser!)
   async testTelegramConnection(botToken?: string): Promise<{ success: boolean; isDemo?: boolean; bot?: any; message?: string; error?: string }> {
     const settings = clientStorage.getSettings();

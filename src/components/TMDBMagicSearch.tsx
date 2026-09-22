@@ -25,6 +25,8 @@ interface TMDBMagicSearchProps {
     genres: string[];
     backdropUrl: string;
     language?: string;
+    id?: number;
+    backdrops?: string[];
   }) => void;
   onOpenFullModal?: () => void;
 }
@@ -86,7 +88,9 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
       imdbRating: movie.imdb_rating || '7.5',
       genres: movie.genres && movie.genres.length > 0 ? movie.genres : ['#Action', '#Drama'],
       backdropUrl: backdrop,
-      language: detectedLang
+      language: detectedLang,
+      id: movie.id,
+      backdrops: movie.backdrops
     });
 
     setMagicFeedback(`✨ "${movie.title}" সফলভাবে লোড হয়েছে!`);

@@ -17,7 +17,10 @@ import {
   X,
   Plus,
   Image as ImageIcon,
-  ChevronRight
+  ChevronLeft,
+  ChevronRight,
+  Wand2,
+  RotateCcw
 } from 'lucide-react';
 import {
   AppSettings,
@@ -34,6 +37,8 @@ import { QualityModal } from '../components/QualityModal';
 import { TelegramPreview } from '../components/TelegramPreview';
 import { ScheduleModal } from '../components/ScheduleModal';
 import { PublishModal, PublishStep } from '../components/PublishModal';
+import { ThumbnailStudioModal } from '../components/ThumbnailStudioModal';
+import { generateMovieThumbnail } from '../utils/thumbnailStudio';
 import { api } from '../services/api';
 import {
   generateGenreCaption,
@@ -90,11 +95,88 @@ export const UploadView: React.FC<UploadViewProps> = ({
   const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+  const [isStudioModalOpen, setIsStudioModalOpen] = useState(false);
+  const [isAutoGeneratingThumbnail, setIsAutoGeneratingThumbnail] = useState(false);
   const [isPostGenerated, setIsPostGenerated] = useState(false);
+  const [availableBackdrops, setAvailableBackdrops] = useState<string[]>([
+    'https://image.tmdb.org/t/p/w1280/14QbnygCuTO0vl7CAFmPf1fgZfV.jpg',
+    'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1280&q=80',
+    'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=1280&q=80',
+    'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1280&q=80'
+  ]);
+  const [currentBackdropIndex, setCurrentBackdropIndex] = useState(0);
+  const [isLoadingBackdrops, setIsLoadingBackdrops] = useState(false);
   const [notification, setNotification] = useState<{
     type: 'success' | 'error' | 'info';
     message: string;
   } | null>(null);
+
+  // Fetch multiple backdrops for selected movie
+  const loadMovieBackdrops = async (movieIdOrTitle: string | number, primaryBackdrop?: string) => {
+    setIsLoadingBackdrops(true);
+    try {
+      const images = await api.getTMDBMovieImages(movieIdOrTitle);
+      if (primaryBackdrop && !images.includes(primaryBackdrop)) {
+        images.unshift(primaryBackdrop);
+      }
+      if (images.length > 0) {
+        setAvailableBackdrops(images);
+        setCurrentBackdropIndex(0);
+        setFormData((prev) => ({ ...prev, posterUrl: images[0] }));
+      }
+    } catch (err) {
+      console.warn('Failed loading movie backdrops:', err);
+    } finally {
+      setIsLoadingBackdrops(false);
+    }
+  };
+
+  const handlePrevBackdrop = () => {
+    if (availableBackdrops.length <= 1) return;
+    const nextIdx = (currentBackdropIndex - 1 + availableBackdrops.length) % availableBackdrops.length;
+    setCurrentBackdropIndex(nextIdx);
+    setFormData((prev) => ({ ...prev, posterUrl: availableBackdrops[nextIdx] }));
+    setIsPostGenerated(false);
+  };
+
+  const handleNextBackdrop = () => {
+    if (availableBackdrops.length <= 1) return;
+    const nextIdx = (currentBackdropIndex + 1) % availableBackdrops.length;
+    setCurrentBackdropIndex(nextIdx);
+    setFormData((prev) => ({ ...prev, posterUrl: availableBackdrops[nextIdx] }));
+    setIsPostGenerated(false);
+  };
+
+  // Automatic form reset after Publish or Schedule
+  const handleResetForm = (keepChannels = true) => {
+    setFormData((prev) => ({
+      title: '',
+      year: new Date().getFullYear().toString(),
+      imdbRating: '7.5',
+      genres: ['#Action', '#Thriller'],
+      language: settings.defaultLanguage || 'Hindi',
+      posterUrl: '',
+      qualities: [
+        { id: '1', name: '480p', url: '', size: '450 MB', enabled: true },
+        { id: '2', name: '720p HEVC', url: '', size: '850 MB', enabled: true },
+        { id: '3', name: '720p', url: '', size: '1.4 GB', enabled: false },
+        { id: '4', name: '1080p HEVC', url: '', size: '2.2 GB', enabled: false },
+        { id: '5', name: '1080p', url: '', size: '3.0 GB', enabled: true },
+        { id: '6', name: '1080p HQ', url: '', size: '5.5 GB', enabled: false },
+        { id: '7', name: '2K', url: '', size: '8.0 GB', enabled: false },
+        { id: '8', name: '4K', url: '', size: '14.0 GB', enabled: false },
+      ],
+      selectedPromotionId: prev.selectedPromotionId,
+      selectedShortenerId: prev.selectedShortenerId,
+      selectedGenreChannelIds: keepChannels ? prev.selectedGenreChannelIds : genreChannels.filter((c) => c.active).map((c) => c.id),
+      selectedHubChannelIds: keepChannels ? prev.selectedHubChannelIds : hubChannels.filter((c) => c.active).map((c) => c.id),
+      emojifyStyle: prev.emojifyStyle || 'ultra'
+    }));
+    setAvailableBackdrops([]);
+    setCurrentBackdropIndex(0);
+    setIsPostGenerated(false);
+    setNewGenreInput('');
+  };
 
   const handleGeneratePost = () => {
     if (!formData.title.trim()) {
@@ -210,6 +292,48 @@ export const UploadView: React.FC<UploadViewProps> = ({
     reader.readAsDataURL(file);
   };
 
+  // Automatic Canvas 16:9 Thumbnail Generator with Movie Title Logo & Badges
+  const handleAutoCanvasGenerate = async () => {
+    if (!formData.posterUrl && !formData.title) {
+      setNotification({
+        type: 'error',
+        message: 'অনুগ্রহ করে প্রথমে মুভির নাম ও একটি ব্যাকড্রপ ইমেজ নির্বাচন করুন।'
+      });
+      return;
+    }
+
+    setIsAutoGeneratingThumbnail(true);
+    try {
+      const activeChannelName = selectedGenreChannels[0]?.name || selectedHubChannels[0]?.name || 'MOVA DETA CINEMA';
+      const cleanRating = formData.imdbRating && formData.imdbRating.trim() ? formData.imdbRating.trim() : '7.8';
+      const canvasThumb = await generateMovieThumbnail({
+        backdropUrl: formData.posterUrl || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1280&q=80',
+        movieTitle: formData.title || 'MOVIE TITLE',
+        year: formData.year || new Date().getFullYear().toString(),
+        imdbRating: cleanRating,
+        language: formData.language || 'Hindi',
+        qualities: formData.qualities.filter((q) => q.enabled).map((q) => q.name),
+        channelName: activeChannelName,
+        darknessLevel: 'light' // Keeps image vivid and crystal clear without muddy darkness
+      });
+
+      setFormData((prev) => ({ ...prev, posterUrl: canvasThumb }));
+      setIsPostGenerated(false);
+      setNotification({
+        type: 'success',
+        message: '✓ পারফেক্ট 16:9 ক্যানভাস থাম্বনেইল (Movie Logo + Badges) সফলভাবে জেনারেট হয়েছে!'
+      });
+    } catch (e: any) {
+      console.error('Error auto-generating canvas thumbnail:', e);
+      setNotification({
+        type: 'error',
+        message: 'ক্যানভাস থাম্বনেইল রেন্ডার করতে সমস্যা হয়েছে। স্টুডিও মোড ট্রাই করুন।'
+      });
+    } finally {
+      setIsAutoGeneratingThumbnail(false);
+    }
+  };
+
   // Execute Direct Publish
   const handlePublishNow = async () => {
     if (!formData.title.trim()) {
@@ -294,6 +418,13 @@ export const UploadView: React.FC<UploadViewProps> = ({
       setFailedChannels(res.failed || []);
       setIsDemoModeResult(res.isDemo);
       onRefreshHistory();
+
+      // Automatically clear form after successful publish
+      if (res.status === 'completed' || res.status === 'partial') {
+        setTimeout(() => {
+          handleResetForm(true);
+        }, 800);
+      }
     } catch (e) {
       console.error(e);
       setResultStatus('failed');
@@ -319,9 +450,14 @@ export const UploadView: React.FC<UploadViewProps> = ({
       timezone
     });
     onRefreshScheduled();
+    const scheduledMovieTitle = formData.title;
+    
+    // Automatically clear form after successful schedule
+    handleResetForm(true);
+
     setNotification({
       type: 'success',
-      message: `✓ Post for "${formData.title}" successfully scheduled on the server!`
+      message: `✓ Post for "${scheduledMovieTitle}" successfully scheduled on the server! Form has been cleared.`
     });
   };
 
@@ -408,6 +544,17 @@ export const UploadView: React.FC<UploadViewProps> = ({
                 language: m.language || prev.language
               }));
               setIsPostGenerated(false);
+              
+              // Load multiple backdrops for carousel if id or backdrops exist
+              if (m.backdrops && m.backdrops.length > 0) {
+                setAvailableBackdrops(m.backdrops);
+                setCurrentBackdropIndex(0);
+              } else if (m.id) {
+                loadMovieBackdrops(m.id, m.backdropUrl);
+              } else if (m.title) {
+                loadMovieBackdrops(m.title, m.backdropUrl);
+              }
+
               setNotification({
                 type: 'success',
                 message: `✨ TMDB Magic Search: "${m.title}" এর ডাটা ও ১৬:৯ থাম্বনেইল লোড সম্পন্ন হয়েছে!`
@@ -423,14 +570,31 @@ export const UploadView: React.FC<UploadViewProps> = ({
                 <Film className="w-4 h-4 text-amber-400" />
                 <span>Movie Details</span>
               </h2>
-              <button
-                type="button"
-                onClick={() => setIsTmdbOpen(true)}
-                className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Magic Search</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleResetForm(true);
+                    setNotification({
+                      type: 'info',
+                      message: 'ফ্রম সম্পূর্ণ ক্লিয়ার করা হয়েছে!'
+                    });
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-rose-300 flex items-center gap-1 transition px-2 py-1 rounded-lg hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20"
+                  title="Clear all fields"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Clear Form</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsTmdbOpen(true)}
+                  className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold px-2 py-1 rounded-lg hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Magic Search</span>
+                </button>
+              </div>
             </div>
 
             {/* Movie Title */}
@@ -551,21 +715,39 @@ export const UploadView: React.FC<UploadViewProps> = ({
 
             {/* 16:9 Movie Thumbnail / Backdrop Image */}
             <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-semibold text-slate-300 flex items-center gap-2">
                   <span>16:9 Movie Thumbnail / Backdrop</span>
                   <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
                     16:9 (1280×720)
                   </span>
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setIsTmdbOpen(true)}
-                  className="text-[11px] text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-1"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Import from TMDB</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoCanvasGenerate}
+                    disabled={isAutoGeneratingThumbnail}
+                    className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-[11px] flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Wand2 className={`w-3.5 h-3.5 ${isAutoGeneratingThumbnail ? 'animate-spin' : ''}`} />
+                    <span>{isAutoGeneratingThumbnail ? 'Generating...' : 'Auto-Generate Canvas Logo'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsStudioModalOpen(true)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 font-semibold text-[11px] flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Canvas Studio</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsTmdbOpen(true)}
+                    className="text-[11px] text-slate-400 hover:text-slate-200 hover:underline flex items-center gap-1 ml-1"
+                  >
+                    <span>TMDB Search</span>
+                  </button>
+                </div>
               </div>
 
               {/* URL input and File picker */}
@@ -611,10 +793,66 @@ export const UploadView: React.FC<UploadViewProps> = ({
                           'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1280&q=80';
                       }}
                     />
-                    <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[10px] font-semibold text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[10px] font-semibold text-amber-300 border border-amber-500/30 flex items-center gap-1 z-10">
                       <span>16:9 Widescreen Thumbnail</span>
                     </div>
-                    <div className="absolute bottom-2 right-2 px-2.5 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-[10px] font-mono text-slate-300 border border-white/10">
+
+                    {/* Image Carousel < > Navigation Buttons */}
+                    {availableBackdrops.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePrevBackdrop();
+                          }}
+                          className="absolute left-2.5 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/75 hover:bg-amber-500 text-white hover:text-black border border-white/20 hover:border-amber-400 flex items-center justify-center shadow-lg transition active:scale-95 cursor-pointer backdrop-blur-sm"
+                          title="Previous Movie Backdrop (<)"
+                          aria-label="Previous backdrop"
+                        >
+                          <ChevronLeft className="w-5 h-5 stroke-[2.5]" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNextBackdrop();
+                          }}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/75 hover:bg-amber-500 text-white hover:text-black border border-white/20 hover:border-amber-400 flex items-center justify-center shadow-lg transition active:scale-95 cursor-pointer backdrop-blur-sm"
+                          title="Next Movie Backdrop (>)"
+                          aria-label="Next backdrop"
+                        >
+                          <ChevronRight className="w-5 h-5 stroke-[2.5]" />
+                        </button>
+                        {/* Backdrop Counter Badge */}
+                        <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-[10px] font-mono text-amber-300 border border-amber-500/30 z-10 flex items-center gap-1">
+                          <span>Image {currentBackdropIndex + 1}/{availableBackdrops.length}</span>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Hover quick action */}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 pointer-events-none">
+                      <div className="flex items-center gap-2 pointer-events-auto">
+                        <button
+                          type="button"
+                          onClick={handleAutoCanvasGenerate}
+                          className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs flex items-center gap-1.5 shadow-lg active:scale-95 transition"
+                        >
+                          <Wand2 className="w-3.5 h-3.5" />
+                          <span>Auto-Apply Movie Logo</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsStudioModalOpen(true)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-white font-semibold text-xs border border-white/20 flex items-center gap-1.5 shadow-lg active:scale-95 transition"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Open Canvas Studio</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="absolute bottom-2 right-2 px-2.5 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-[10px] font-mono text-slate-300 border border-white/10 z-10">
                       {formData.title} ({formData.year})
                     </div>
                   </>
@@ -626,6 +864,37 @@ export const UploadView: React.FC<UploadViewProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Backdrop Carousel Switcher Bar */}
+              {availableBackdrops.length > 1 && (
+                <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900/90 border border-amber-500/20 text-xs">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrevBackdrop}
+                      className="px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-300 hover:text-black font-bold flex items-center gap-1 transition active:scale-95 border border-amber-500/30"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Prev</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextBackdrop}
+                      className="px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-300 hover:text-black font-bold flex items-center gap-1 transition active:scale-95 border border-amber-500/30"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <span className="text-[11px] text-slate-300 font-mono">
+                      Image <b className="text-amber-400">{currentBackdropIndex + 1}</b> of {availableBackdrops.length}
+                    </span>
+                  </div>
+
+                  <span className="text-[11px] text-slate-400 hidden xs:inline">
+                    &lt; &gt; বাটনে ক্লিক করে পছন্দসই ছবি সিলেক্ট করুন
+                  </span>
+                </div>
+              )}
 
               {/* 16:9 Thumbnail Presets */}
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
@@ -1061,6 +1330,15 @@ export const UploadView: React.FC<UploadViewProps> = ({
             genres: m.genres,
             posterUrl: m.backdropUrl || prev.posterUrl
           }));
+          setIsPostGenerated(false);
+          if (m.backdrops && m.backdrops.length > 0) {
+            setAvailableBackdrops(m.backdrops);
+            setCurrentBackdropIndex(0);
+          } else if (m.id) {
+            loadMovieBackdrops(m.id, m.backdropUrl);
+          } else if (m.title) {
+            loadMovieBackdrops(m.title, m.backdropUrl);
+          }
         }}
       />
 
@@ -1092,6 +1370,27 @@ export const UploadView: React.FC<UploadViewProps> = ({
         failedChannels={failedChannels}
         isDemoMode={isDemoModeResult}
         onRetryFailed={handlePublishNow}
+      />
+
+      <ThumbnailStudioModal
+        isOpen={isStudioModalOpen}
+        onClose={() => setIsStudioModalOpen(false)}
+        initialBackdrop={formData.posterUrl}
+        movieTitle={formData.title}
+        year={formData.year}
+        imdbRating={formData.imdbRating}
+        language={formData.language}
+        qualities={formData.qualities.filter((q) => q.enabled).map((q) => q.name)}
+        channelName={selectedGenreChannels[0]?.name || selectedHubChannels[0]?.name || 'MOVA DETA CINEMA'}
+        availableBackdrops={availableBackdrops}
+        onApplyThumbnail={(dataUrl) => {
+          setFormData((prev) => ({ ...prev, posterUrl: dataUrl }));
+          setIsPostGenerated(false);
+          setNotification({
+            type: 'success',
+            message: '✓ ক্যানভাস থেকে পারফেক্ট 16:9 লোগো থাম্বনেইল সফলভাবে সিলেক্ট করা হয়েছে!'
+          });
+        }}
       />
     </div>
   );
