@@ -41,6 +41,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [testingBot, setTestingBot] = useState(false);
   const [showHostingGuide, setShowHostingGuide] = useState(true);
+  const [activeDeployTab, setActiveDeployTab] = useState<'vercel' | 'infinityfree'>('vercel');
   const [botTestResult, setBotTestResult] = useState<{
     success?: boolean;
     isDemo?: boolean;
@@ -348,7 +349,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        {/* Section 6: InfinityFree & Apache Shared Hosting Deployment Guide */}
+        {/* Section 6: Dual Deployment Guide: Vercel & InfinityFree */}
         <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-blue-950/20 via-[#0c101a] to-[#0c101a] border border-blue-500/30 shadow-lg space-y-4">
           <div className="flex items-center justify-between cursor-pointer" onClick={() => setShowHostingGuide(!showHostingGuide)}>
             <div className="flex items-center gap-3">
@@ -358,14 +359,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-bold text-slate-100 font-cinzel">
-                    InfinityFree Deployment Guide (ইনফিনিটি-ফ্রি হোস্টিং সমাধান)
+                    Live Deployment Guide (Vercel &amp; InfinityFree)
                   </h2>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-semibold">
-                    htdocs Ready
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
+                    100% Active Support
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  InfinityFree তে আপলোড করার পর ব্ল্যাঙ্ক স্ক্রিন আসা সমাধানের পূর্ণাঙ্গ নির্দেশিকা।
+                  Vercel এবং InfinityFree উভয় প্ল্যাটফর্মেই কোনো ত্রুটি ছাড়া সাইট সক্রিয় রাখার সম্পূর্ণ গাইড।
                 </p>
               </div>
             </div>
@@ -379,98 +380,178 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           {showHostingGuide && (
             <div className="space-y-4 pt-2 border-t border-white/5 text-xs">
-              {/* One-Click Download ZIP Banner */}
-              <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/20 via-blue-500/10 to-transparent border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px] border border-emerald-500/30">
-                      ⚡ 1-Click Ready Solution
-                    </span>
-                    <h3 className="font-bold text-slate-100 text-sm">ইনফিনিটি-ফ্রি এর জন্য তৈরি জিপ ফাইল</h3>
-                  </div>
-                  <p className="text-[11px] text-slate-300 mt-1">
-                    এই জিপ ফাইলটিতে <code className="text-emerald-300 font-mono">dist</code> এর কম্পাইল করা কোড, পিএইচপি ব্যাকএন্ড ও <code className="text-cyan-300 font-mono">.htaccess</code> সম্পূর্ণ সেটআপ করা আছে।
-                  </p>
-                </div>
-                <a
-                  href="/htdocs.zip"
-                  download="htdocs.zip"
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition shrink-0"
+              {/* Tabs Switcher: Vercel vs InfinityFree */}
+              <div className="flex p-1 rounded-xl bg-slate-950 border border-white/10 max-w-sm">
+                <button
+                  type="button"
+                  onClick={() => setActiveDeployTab('vercel')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+                    activeDeployTab === 'vercel'
+                      ? 'bg-amber-500 text-black shadow-md'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Download htdocs.zip</span>
-                </a>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Vercel (সুপার ফাস্ট)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDeployTab('infinityfree')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+                    activeDeployTab === 'infinityfree'
+                      ? 'bg-cyan-500 text-black shadow-md'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Server className="w-3.5 h-3.5" />
+                  <span>InfinityFree (htdocs)</span>
+                </button>
               </div>
 
-              {/* Alert: Why was it blank with zip? */}
-              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-1.5">
-                <div className="flex items-center gap-2 font-bold text-amber-300">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>জিপ ফাইল আপলোড করার পর ব্ল্যাঙ্ক হওয়ার ২টি কারণ:</span>
-                </div>
-                <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-300 space-y-1">
-                  <li>
-                    <b>জিপ ফাইলটি আনজিপ (Extract) না করা:</b> InfinityFree ফাইল ম্যানেজারে জিপ আপলোড করলে স্বয়ংক্রিয়ভাবে খুলে যায় না। আপনাকে ফাইলের ওপর রাইট-ক্লিক করে <b>Extract</b> করতে হয়।
-                  </li>
-                  <li>
-                    <b>সোর্স কোডের জিপ আপলোড করা:</b> AI Studio থেকে যে জিপটি এক্সপোর্ট করা হয় তাতে র সোর্স ফাইল (<code className="text-amber-300 font-mono">src</code>, <code className="text-amber-300 font-mono">package.json</code>) থাকে, যা ব্রাউজার সরাসরি চালাতে পারে না। ওপরের বাটনে ক্লিক করে তৈরি করা <b>htdocs.zip</b> ব্যবহার করুন।
-                  </li>
-                </ul>
-              </div>
-
-              {/* Step by Step instructions for File Manager */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
-                  <div className="flex items-center gap-1.5 font-bold text-cyan-300">
-                    <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px]">1</span>
-                    <span>htdocs.zip আপলোড</span>
+              {/* Vercel Guide Content */}
+              {activeDeployTab === 'vercel' && (
+                <div className="space-y-3 animate-in fade-in">
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-1.5">
+                    <div className="flex items-center gap-2 font-bold text-amber-300">
+                      <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Vercel-এ সরাসরি লাইভ করার সহজ ধাপ:</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      প্রজেক্টে <code className="text-amber-300 font-mono">vercel.json</code> এবং স্বয়ংক্রিয় ক্লায়েন্ট-সাইড মেমরি ও ব্রাউজার টেলিগ্রাম গেটওয়ে যুক্ত করা হয়েছে। Vercel এ ডিপ্লয় করলে কোনো সার্ভার ক্র্যাশ ছাড়া সমস্ত ফিচার স্বয়ংক্রিয়ভাবে একটিভ থাকবে।
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    ওপরের বাটন থেকে <b>htdocs.zip</b> ডাউনলোড করে InfinityFree File Manager এর <code className="text-cyan-300 font-mono">htdocs</code> ফোল্ডারে আপলোড করুন।
-                  </p>
-                </div>
 
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
-                  <div className="flex items-center gap-1.5 font-bold text-emerald-300">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-[10px]">2</span>
-                    <span>রাইট-ক্লিক করে Extract</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                        <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px]">1</span>
+                        <span>GitHub-এ পুশ করুন</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        আপনার গিট রিপোজিটরিতে এই কোড পুশ করুন অথবা Vercel ড্যাশবোর্ডে <b>Import Git Repository</b> সিলেক্ট করুন।
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                        <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px]">2</span>
+                        <span>Build Command</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Framework Preset: <b>Vite</b> থাকবে। Build Command: <code className="text-amber-300 font-mono">vite build</code> এবং Output Directory: <code className="text-amber-300 font-mono">dist</code> নির্বাচন করুন।
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                        <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px]">3</span>
+                        <span>Deploy এ ক্লিক করুন</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        <b>Deploy</b> বাটনে চাপ দিন। ১ মিনিটের মধ্যে সাইট লাইভ হয়ে যাবে এবং টেলিগ্রাম পোস্ট ও TMDB সরাসরি কাজ করবে।
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    আপলোড করা <code className="text-emerald-300 font-mono">htdocs.zip</code> এর ওপর রাইট-ক্লিক করে <b>Extract</b> চাপুন। সব ফাইল সরাসরি htdocs এ খুলে যাবে।
-                  </p>
                 </div>
+              )}
 
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
-                  <div className="flex items-center gap-1.5 font-bold text-indigo-300">
-                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px]">3</span>
-                    <span>পারমিশন 755 দিন</span>
+              {/* InfinityFree Guide Content */}
+              {activeDeployTab === 'infinityfree' && (
+                <div className="space-y-3 animate-in fade-in">
+                  {/* One-Click Download ZIP Banner */}
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-500/20 via-blue-500/10 to-transparent border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold text-[10px] border border-cyan-500/30">
+                          ⚡ 1-Click Ready Solution
+                        </span>
+                        <h3 className="font-bold text-slate-100 text-sm">ইনফিনিটি-ফ্রি এর জন্য তৈরি জিপ ফাইল</h3>
+                      </div>
+                      <p className="text-[11px] text-slate-300 mt-1">
+                        এই জিপ ফাইলটিতে <code className="text-cyan-300 font-mono">dist</code> এর কম্পাইল করা কোড, পিএইচপি ব্যাকএন্ড ও <code className="text-emerald-300 font-mono">.htaccess</code> সম্পূর্ণ সেটআপ করা আছে।
+                      </p>
+                    </div>
+                    <a
+                      href="/htdocs.zip"
+                      download="htdocs.zip"
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-400 hover:to-teal-500 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition shrink-0"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download htdocs.zip</span>
+                    </a>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    <code className="text-slate-200 font-mono">data/</code> ও <code className="text-slate-200 font-mono">uploads/</code> ফোল্ডারের ওপর রাইট ক্লিক করে <b>Permissions: 755</b> দিন। ব্যস কাজ শেষ!
-                  </p>
-                </div>
-              </div>
 
-              {/* Exact Files Tree for htdocs */}
-              <div className="p-3.5 rounded-xl bg-slate-950/90 border border-white/10 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-200 flex items-center gap-1.5 text-xs">
-                    <FolderCheck className="w-4 h-4 text-emerald-400" />
-                    <span>htdocs ফোল্ডারে ঠিক যে ফাইলগুলো থাকবে:</span>
-                  </span>
-                  <span className="text-[10px] text-slate-500">InfinityFree Root Checklist</span>
+                  {/* Alert: Why was it blank with zip? */}
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-1.5">
+                    <div className="flex items-center gap-2 font-bold text-amber-300">
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>জিপ ফাইল আপলোড করার পর ব্ল্যাঙ্ক হওয়ার ২টি কারণ:</span>
+                    </div>
+                    <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-300 space-y-1">
+                      <li>
+                        <b>জিপ ফাইলটি আনজিপ (Extract) না করা:</b> InfinityFree ফাইল ম্যানেজারে জিপ আপলোড করলে স্বয়ংক্রিয়ভাবে খুলে যায় না। আপনাকে ফাইলের ওপর রাইট-ক্লিক করে <b>Extract</b> করতে হয়।
+                      </li>
+                      <li>
+                        <b>সোর্স কোডের জিপ আপলোড করা:</b> AI Studio থেকে যে জিপটি এক্সপোর্ট করা হয় তাতে র সোর্স ফাইল (<code className="text-amber-300 font-mono">src</code>, <code className="text-amber-300 font-mono">package.json</code>) থাকে, যা ব্রাউজার সরাসরি চালাতে পারে না। ওপরের বাটনে ক্লিক করে তৈরি করা <b>htdocs.zip</b> ব্যবহার করুন।
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Step by Step instructions for File Manager */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
+                      <div className="flex items-center gap-1.5 font-bold text-cyan-300">
+                        <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px]">1</span>
+                        <span>htdocs.zip আপলোড</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        ওপরের বাটন থেকে <b>htdocs.zip</b> ডাউনলোড করে InfinityFree File Manager এর <code className="text-cyan-300 font-mono">htdocs</code> ফোল্ডারে আপলোড করুন।
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
+                      <div className="flex items-center gap-1.5 font-bold text-emerald-300">
+                        <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-[10px]">2</span>
+                        <span>রাইট-ক্লিক করে Extract</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        আপলোড করা <code className="text-emerald-300 font-mono">htdocs.zip</code> এর ওপর রাইট-ক্লিক করে <b>Extract</b> চাপুন। সব ফাইল সরাসরি htdocs এ খুলে যাবে।
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
+                      <div className="flex items-center gap-1.5 font-bold text-indigo-300">
+                        <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px]">3</span>
+                        <span>পারমিশন 755 দিন</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        <code className="text-slate-200 font-mono">data/</code> ও <code className="text-slate-200 font-mono">uploads/</code> ফোল্ডারের ওপর রাইট ক্লিক করে <b>Permissions: 755</b> দিন। ব্যস কাজ শেষ!
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Exact Files Tree for htdocs */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/90 border border-white/10 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200 flex items-center gap-1.5 text-xs">
+                        <FolderCheck className="w-4 h-4 text-emerald-400" />
+                        <span>htdocs ফোল্ডারে ঠিক যে ফাইলগুলো থাকবে:</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500">InfinityFree Root Checklist</span>
+                    </div>
+                    <div className="font-mono text-[11px] text-slate-300 bg-[#070a12] p-2.5 rounded-lg border border-white/5 space-y-1">
+                      <div className="text-cyan-400 font-bold">📁 htdocs/</div>
+                      <div className="pl-4 text-slate-300">├── 📄 <b>index.html</b> <span className="text-slate-500">(প্রধান পেজ)</span></div>
+                      <div className="pl-4 text-slate-300">├── 📁 <b>assets/</b> <span className="text-slate-500">(কম্পাইল করা JS ও CSS)</span></div>
+                      <div className="pl-4 text-slate-300">├── 📁 <b>api/</b> <span className="text-slate-500">(পিএইচপি ব্যাকএন্ড: config.php, telegram.php ইত্যাদি)</span></div>
+                      <div className="pl-4 text-slate-300">├── 📁 <b>data/</b> <span className="text-slate-500">(লোকাল ডেটাবেজ ও .htaccess সিকিউরিটি)</span></div>
+                      <div className="pl-4 text-slate-300">├── 📁 <b>uploads/</b> <span className="text-slate-500">(মুভি পোস্টার ডিরেক্টরি)</span></div>
+                      <div className="pl-4 text-slate-300">├── 📁 <b>cron/</b> <span className="text-slate-500">(শিডিউলার ক্রন স্ক্রিপ্ট)</span></div>
+                      <div className="pl-4 text-slate-300">└── ⚙️ <b>.htaccess</b> <span className="text-slate-500">(রাউটিং ও অ্যাপাচি কনফিগারেশন)</span></div>
+                    </div>
+                  </div>
                 </div>
-                <div className="font-mono text-[11px] text-slate-300 bg-[#070a12] p-2.5 rounded-lg border border-white/5 space-y-1">
-                  <div className="text-cyan-400 font-bold">📁 htdocs/</div>
-                  <div className="pl-4 text-slate-300">├── 📄 <b>index.html</b> <span className="text-slate-500">(প্রধান পেজ)</span></div>
-                  <div className="pl-4 text-slate-300">├── 📁 <b>assets/</b> <span className="text-slate-500">(কম্পাইল করা JS ও CSS)</span></div>
-                  <div className="pl-4 text-slate-300">├── 📁 <b>api/</b> <span className="text-slate-500">(পিএইচপি ব্যাকএন্ড: config.php, telegram.php ইত্যাদি)</span></div>
-                  <div className="pl-4 text-slate-300">├── 📁 <b>data/</b> <span className="text-slate-500">(লোকাল ডেটাবেজ ও .htaccess সিকিউরিটি)</span></div>
-                  <div className="pl-4 text-slate-300">├── 📁 <b>uploads/</b> <span className="text-slate-500">(মুভি পোস্টার ডিরেক্টরি)</span></div>
-                  <div className="pl-4 text-slate-300">├── 📁 <b>cron/</b> <span className="text-slate-500">(শিডিউলার ক্রন স্ক্রিপ্ট)</span></div>
-                  <div className="pl-4 text-slate-300">└── ⚙️ <b>.htaccess</b> <span className="text-slate-500">(রাউটিং ও অ্যাপাচি কনফিগারেশন)</span></div>
-                </div>
-              </div>
+              )}
             </div>
           )}
         </div>
