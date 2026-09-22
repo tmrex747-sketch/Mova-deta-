@@ -472,7 +472,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </p>
                     </div>
                     <a
-                      href="/htdocs.zip"
+                      href="/api/download-zip"
                       download="htdocs.zip"
                       className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-400 hover:to-teal-500 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition shrink-0"
                     >

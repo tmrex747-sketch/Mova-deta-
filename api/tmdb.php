@@ -165,6 +165,40 @@ $genreMap = [
     53 => '#Thriller', 10752 => '#War', 37 => '#Western'
 ];
 
+// Handle Fetch Multiple Backdrops Action
+if ($action === 'images') {
+    $images = [];
+    $movieId = $id ? $id : $query;
+
+    if ($apiKey && is_numeric($movieId)) {
+        $url = 'https://api.themoviedb.org/3/movie/' . urlencode($movieId) . '/images?api_key=' . urlencode($apiKey);
+        $raw = fetchUrl($url);
+        if ($raw) {
+            $json = json_decode($raw, true);
+            if (!empty($json['backdrops'])) {
+                foreach (array_slice($json['backdrops'], 0, 15) as $b) {
+                    if (!empty($b['file_path'])) {
+                        $images[] = 'https://image.tmdb.org/t/p/w1280' . $b['file_path'];
+                    }
+                }
+            }
+        }
+    }
+
+    if (empty($images)) {
+        $images = [
+            'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1280&q=80',
+            'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=1280&q=80',
+            'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1280&q=80',
+            'https://images.unsplash.com/photo-1478760329108-5c3ed9d495a0?auto=format&fit=crop&w=1280&q=80',
+            'https://images.unsplash.com/photo-1574267432553-4b4628081c31?auto=format&fit=crop&w=1280&q=80'
+        ];
+    }
+
+    echo json_encode(['success' => true, 'images' => $images]);
+    exit;
+}
+
 if ($action === 'search') {
     if (!$query) {
         echo json_encode(['success' => true, 'results' => $sampleMovies]);
