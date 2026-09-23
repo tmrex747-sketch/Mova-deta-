@@ -628,102 +628,148 @@ app.all(['/api/telegram', '/api/telegram.php'], async (req, res) => {
       hubCaption = '',
       genreChannels = [],
       hubChannels = [],
-      demoMode = false
+      demoMode = false,
+      botToken: clientBotToken = ''
     } = req.body;
 
-    const isDemo = !token || demoMode;
+    const activeToken = (clientBotToken || token || '').trim();
+
+    // If server settings was missing the bot token, save it so future calls and restarts retain it
+    if (clientBotToken && !settings.telegramBotToken) {
+      settings.telegramBotToken = clientBotToken.trim();
+      writeJsonFile(path.join(dataDir, 'settings.json'), settings);
+    }
+
+    const isDemo = !activeToken || demoMode;
     const successful: string[] = [];
     const failed: string[] = [];
     const results: any[] = [];
+
+    // Helper to post to a Telegram channel with full fallback resilience
+    const sendChannelPost = async (chatId: string, channelName: string, captionText: string, type: 'genre' | 'hub') => {
+      if (isDemo) {
+        successful.push(channelName);
+        results.push({ type, channel: channelName, chatId, success: true, simulated: true });
+        return;
+      }
+
+      // 1. Try sending Photo if photoUrl is present
+      if (photoUrl && photoUrl.trim()) {
+        try {
+          let photoCaption = captionText;
+          if (photoCaption.length > 1020) {
+            photoCaption = photoCaption.slice(0, 1017) + '...';
+          }
+
+          let tgRes: Response;
+          if (photoUrl.startsWith('data:image/')) {
+            const matches = photoUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+            if (matches) {
+              const ext = matches[1] === 'png' ? 'png' : matches[1] === 'webp' ? 'webp' : 'jpg';
+              const buffer = Buffer.from(matches[2], 'base64');
+              const blob = new Blob([buffer], { type: `image/${ext}` });
+
+              const formData = new FormData();
+              formData.append('chat_id', chatId);
+              formData.append('photo', blob, `poster.${ext}`);
+              formData.append('caption', photoCaption);
+              formData.append('parse_mode', 'HTML');
+
+              tgRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendPhoto`, {
+                method: 'POST',
+                body: formData
+              });
+            } else {
+              throw new Error('Invalid base64 image data');
+            }
+          } else {
+            tgRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendPhoto`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                photo: photoUrl,
+                caption: photoCaption,
+                parse_mode: 'HTML',
+                disable_web_page_preview: false
+              })
+            });
+          }
+
+          const d: any = await tgRes.json();
+          if (d.ok) {
+            successful.push(channelName);
+            results.push({ type, channel: channelName, chatId, success: true, messageId: d.result.message_id });
+            return;
+          }
+          console.warn(`[Telegram API] sendPhoto failed for ${channelName} (${d.description}), falling back to sendMessage`);
+        } catch (e: any) {
+          console.warn(`[Telegram API] sendPhoto error for ${channelName}:`, e.message);
+        }
+      }
+
+      // 2. Fallback to sendMessage (Supports up to 4096 characters!)
+      try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: captionText,
+            parse_mode: 'HTML',
+            disable_web_page_preview: false
+          })
+        });
+        const d: any = await tgRes.json();
+        if (d.ok) {
+          successful.push(channelName);
+          results.push({ type, channel: channelName, chatId, success: true, messageId: d.result.message_id });
+          return;
+        }
+
+        // Retry without HTML if unclosed tags cause an entity parse error
+        if (d.description && (d.description.includes('parse') || d.description.includes('entity'))) {
+          const plainText = captionText.replace(/<[^>]*>?/gm, '');
+          const retryRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: plainText,
+              disable_web_page_preview: false
+            })
+          });
+          const retryD: any = await retryRes.json();
+          if (retryD.ok) {
+            successful.push(channelName);
+            results.push({ type, channel: channelName, chatId, success: true, messageId: retryD.result.message_id });
+            return;
+          }
+          failed.push(channelName);
+          results.push({ type, channel: channelName, chatId, success: false, error: retryD.description });
+          return;
+        }
+
+        failed.push(channelName);
+        results.push({ type, channel: channelName, chatId, success: false, error: d.description });
+      } catch (e: any) {
+        failed.push(channelName);
+        results.push({ type, channel: channelName, chatId, success: false, error: e.message });
+      }
+    };
 
     // Publish to Genre Channels
     for (const ch of genreChannels) {
       const chatId = ch.chatId || ch.username || '';
       const channelName = ch.name || chatId;
-
-      if (isDemo) {
-        successful.push(channelName);
-        results.push({ type: 'genre', channel: channelName, chatId, success: true, simulated: true });
-        continue;
-      }
-
-      try {
-        const endpoint = photoUrl
-          ? `https://api.telegram.org/bot${token}/sendPhoto`
-          : `https://api.telegram.org/bot${token}/sendMessage`;
-        const payload: any = {
-          chat_id: chatId,
-          parse_mode: 'HTML',
-          disable_web_page_preview: false
-        };
-        if (photoUrl) {
-          payload.photo = photoUrl;
-          payload.caption = genreCaption;
-        } else {
-          payload.text = genreCaption;
-        }
-        const r = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const d: any = await r.json();
-        if (d.ok) {
-          successful.push(channelName);
-          results.push({ type: 'genre', channel: channelName, chatId, success: true, messageId: d.result.message_id });
-        } else {
-          failed.push(channelName);
-          results.push({ type: 'genre', channel: channelName, chatId, success: false, error: d.description });
-        }
-      } catch (e: any) {
-        failed.push(channelName);
-        results.push({ type: 'genre', channel: channelName, chatId, success: false, error: e.message });
-      }
+      await sendChannelPost(chatId, channelName, genreCaption, 'genre');
     }
 
     // Publish to Hub Channels
     for (const hub of hubChannels) {
       const chatId = hub.chatId || hub.username || '';
       const hubName = hub.name || chatId;
-
-      if (isDemo) {
-        successful.push(hubName);
-        results.push({ type: 'hub', channel: hubName, chatId, success: true, simulated: true });
-        continue;
-      }
-
-      try {
-        const endpoint = photoUrl
-          ? `https://api.telegram.org/bot${token}/sendPhoto`
-          : `https://api.telegram.org/bot${token}/sendMessage`;
-        const payload: any = {
-          chat_id: chatId,
-          parse_mode: 'HTML',
-          disable_web_page_preview: false
-        };
-        if (photoUrl) {
-          payload.photo = photoUrl;
-          payload.caption = hubCaption;
-        } else {
-          payload.text = hubCaption;
-        }
-        const r = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const d: any = await r.json();
-        if (d.ok) {
-          successful.push(hubName);
-          results.push({ type: 'hub', channel: hubName, chatId, success: true, messageId: d.result.message_id });
-        } else {
-          failed.push(hubName);
-          results.push({ type: 'hub', channel: hubName, chatId, success: false, error: d.description });
-        }
-      } catch (e: any) {
-        failed.push(hubName);
-        results.push({ type: 'hub', channel: hubName, chatId, success: false, error: e.message });
-      }
+      await sendChannelPost(chatId, hubName, hubCaption, 'hub');
     }
 
     const status = failed.length === 0 ? 'completed' : (successful.length > 0 ? 'partial' : 'failed');

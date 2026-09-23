@@ -5,6 +5,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/htdocs.zip",
+      "destination": "/htdocs.zip"
+    },
+    {
+      "source": "/api/download-zip",
+      "destination": "/htdocs.zip"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

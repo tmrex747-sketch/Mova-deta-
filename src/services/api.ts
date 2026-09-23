@@ -29,20 +29,38 @@ async function safeFetch(url: string, options?: RequestInit): Promise<Response> 
 export const api = {
   // 1. Settings & Config
   async getSettings(): Promise<AppSettings> {
+    const local = clientStorage.getSettings();
     try {
       const res = await safeFetch(`${API_BASE}/config.php`);
       if (res.ok) {
         const text = await res.text();
         const json = JSON.parse(text);
         if (json.data) {
-          clientStorage.saveSettings(json.data);
-          return json.data;
+          // Smart merge: Never let an empty server response erase an existing local bot token or api key!
+          const merged: AppSettings = {
+            ...local,
+            ...json.data,
+            telegramBotToken: json.data.telegramBotToken?.trim() || local.telegramBotToken?.trim() || '',
+            telegramBotUsername: json.data.telegramBotUsername || local.telegramBotUsername || '',
+            tmdbApiKey: json.data.tmdbApiKey?.trim() || local.tmdbApiKey?.trim() || '',
+            canvasBrandingName: json.data.canvasBrandingName || local.canvasBrandingName || ''
+          };
+          clientStorage.saveSettings(merged);
+          // If server was missing the bot token that we have locally, sync to server in background
+          if (!json.data.telegramBotToken && merged.telegramBotToken) {
+            safeFetch(`${API_BASE}/config.php`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ telegramBotToken: merged.telegramBotToken, telegramBotUsername: merged.telegramBotUsername })
+            }).catch(() => {});
+          }
+          return merged;
         }
       }
     } catch {
       // Fallback for Vercel / Static
     }
-    return clientStorage.getSettings();
+    return local;
   },
 
   async saveSettings(settings: Partial<AppSettings>): Promise<{ success: boolean; data?: AppSettings }> {
@@ -685,7 +703,11 @@ export const api = {
         body: JSON.stringify({ botToken: token })
       });
       if (res.ok) {
-        return await res.json();
+        const text = await res.text();
+        const trimmed = text.trim();
+        if (trimmed.startsWith('{')) {
+          return JSON.parse(trimmed);
+        }
       }
     } catch {
       // Vercel / Client-Side Direct Execution
@@ -725,6 +747,7 @@ export const api = {
     genreChannels: GenreChannel[];
     hubChannels: HubChannel[];
     demoMode?: boolean;
+    botToken?: string;
   }): Promise<{
     success: boolean;
     status: 'completed' | 'partial' | 'failed';
@@ -735,120 +758,176 @@ export const api = {
     historyRecord?: UploadHistoryItem;
   }> {
     const settings = clientStorage.getSettings();
-    const token = (settings.telegramBotToken || '').trim();
+    const token = (payload.botToken || settings.telegramBotToken || '').trim();
     const isDemo = !token || Boolean(payload.demoMode);
 
+    // Try backend proxy first, including botToken in the body so backend always has it
+    let serverHandled = false;
+    let serverRes: any = null;
     try {
       const res = await safeFetch(`${API_BASE}/telegram.php?action=publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, botToken: token })
       });
       if (res.ok) {
-        const json = await res.json();
-        if (json.historyRecord) {
-          clientStorage.addHistory(json.historyRecord);
+        const text = await res.text();
+        const trimmed = text.trim();
+        if (trimmed.startsWith('{')) {
+          serverRes = JSON.parse(trimmed);
+          // If server successfully posted to all channels or is demo, return server result
+          if (serverRes.status === 'completed' || isDemo) {
+            if (serverRes.historyRecord) {
+              clientStorage.addHistory(serverRes.historyRecord);
+            }
+            return serverRes;
+          }
+          serverHandled = true;
         }
-        return json;
       }
     } catch {
-      // Direct Vercel / Client-Side Execution
+      // Fallback to client-side direct execution
     }
 
-    const successful: string[] = [];
+    // Direct Browser Execution (Fallback for Vercel, InfinityFree curl blockers, or partial failures)
+    const successful: string[] = serverRes?.successful || [];
     const failed: string[] = [];
-    const results: any[] = [];
+    const results: any[] = serverRes?.results?.filter((r: any) => r.success) || [];
 
-    // Genre channels
-    for (const ch of payload.genreChannels) {
-      const chatId = ch.chatId || ch.username || '';
-      const channelName = ch.name || chatId;
+    const sendToTelegramChannel = async (
+      chatId: string,
+      channelName: string,
+      captionText: string,
+      type: 'genre' | 'hub'
+    ) => {
+      if (successful.includes(channelName)) return;
 
       if (isDemo) {
         successful.push(channelName);
-        results.push({ type: 'genre', channel: channelName, chatId, success: true, simulated: true });
-        continue;
+        results.push({ type, channel: channelName, chatId, success: true, simulated: true });
+        return;
       }
 
-      try {
-        const endpoint = payload.photoUrl
-          ? `https://api.telegram.org/bot${token}/sendPhoto`
-          : `https://api.telegram.org/bot${token}/sendMessage`;
-        const bodyPayload: any = {
-          chat_id: chatId,
-          parse_mode: 'HTML',
-          disable_web_page_preview: false
-        };
-        if (payload.photoUrl) {
-          bodyPayload.photo = payload.photoUrl;
-          bodyPayload.caption = payload.genreCaption;
-        } else {
-          bodyPayload.text = payload.genreCaption;
-        }
+      // 1. Try sending Photo with Caption if photoUrl is available
+      if (payload.photoUrl && payload.photoUrl.trim()) {
+        try {
+          // Telegram sendPhoto caption has a hard limit of 1024 characters
+          let photoCaption = captionText;
+          if (photoCaption.length > 1020) {
+            photoCaption = photoCaption.slice(0, 1017) + '...';
+          }
 
-        const r = await fetch(endpoint, {
+          let tgRes: Response;
+          if (payload.photoUrl.startsWith('data:image/')) {
+            // Convert base64 data URI to multipart/form-data Blob for Telegram API
+            const parts = payload.photoUrl.split(',');
+            const mime = parts[0].split(':')[1].split(';')[0];
+            const byteCharacters = atob(parts[1]);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: mime });
+
+            const formData = new FormData();
+            formData.append('chat_id', chatId);
+            formData.append('photo', blob, 'mova_thumbnail.jpg');
+            formData.append('caption', photoCaption);
+            formData.append('parse_mode', 'HTML');
+
+            tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+              method: 'POST',
+              body: formData
+            });
+          } else {
+            tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                photo: payload.photoUrl,
+                caption: photoCaption,
+                parse_mode: 'HTML',
+                disable_web_page_preview: false
+              })
+            });
+          }
+
+          const d = await tgRes.json();
+          if (d.ok) {
+            successful.push(channelName);
+            results.push({ type, channel: channelName, chatId, success: true, messageId: d.result.message_id });
+            return;
+          }
+          console.warn(`sendPhoto failed for ${channelName} (${d.description}), falling back to sendMessage`);
+        } catch (err: any) {
+          console.warn(`sendPhoto error for ${channelName}:`, err.message);
+        }
+      }
+
+      // 2. Fallback to sendMessage (Supports up to 4096 characters!)
+      try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyPayload)
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: captionText,
+            parse_mode: 'HTML',
+            disable_web_page_preview: false
+          })
         });
-        const d = await r.json();
+        const d = await tgRes.json();
         if (d.ok) {
           successful.push(channelName);
-          results.push({ type: 'genre', channel: channelName, chatId, success: true, messageId: d.result.message_id });
-        } else {
-          failed.push(channelName);
-          results.push({ type: 'genre', channel: channelName, chatId, success: false, error: d.description });
+          results.push({ type, channel: channelName, chatId, success: true, messageId: d.result.message_id });
+          return;
         }
-      } catch (e: any) {
+
+        // If entity parse error (e.g. unescaped HTML tag in user title), retry as plain text
+        if (d.description && (d.description.includes('parse') || d.description.includes('entity'))) {
+          const plainText = captionText.replace(/<[^>]*>?/gm, '');
+          const retryRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: plainText,
+              disable_web_page_preview: false
+            })
+          });
+          const retryD = await retryRes.json();
+          if (retryD.ok) {
+            successful.push(channelName);
+            results.push({ type, channel: channelName, chatId, success: true, messageId: retryD.result.message_id });
+            return;
+          }
+          failed.push(channelName);
+          results.push({ type, channel: channelName, chatId, success: false, error: retryD.description });
+          return;
+        }
+
         failed.push(channelName);
-        results.push({ type: 'genre', channel: channelName, chatId, success: false, error: e.message });
+        results.push({ type, channel: channelName, chatId, success: false, error: d.description });
+      } catch (err: any) {
+        failed.push(channelName);
+        results.push({ type, channel: channelName, chatId, success: false, error: err.message });
       }
+    };
+
+    // Publish to Genre channels
+    for (const ch of payload.genreChannels) {
+      const chatId = ch.chatId || ch.username || '';
+      const channelName = ch.name || chatId;
+      await sendToTelegramChannel(chatId, channelName, payload.genreCaption, 'genre');
     }
 
-    // Hub channels
+    // Publish to Hub channels
     for (const hub of payload.hubChannels) {
       const chatId = hub.chatId || hub.username || '';
       const hubName = hub.name || chatId;
-
-      if (isDemo) {
-        successful.push(hubName);
-        results.push({ type: 'hub', channel: hubName, chatId, success: true, simulated: true });
-        continue;
-      }
-
-      try {
-        const endpoint = payload.photoUrl
-          ? `https://api.telegram.org/bot${token}/sendPhoto`
-          : `https://api.telegram.org/bot${token}/sendMessage`;
-        const bodyPayload: any = {
-          chat_id: chatId,
-          parse_mode: 'HTML',
-          disable_web_page_preview: false
-        };
-        if (payload.photoUrl) {
-          bodyPayload.photo = payload.photoUrl;
-          bodyPayload.caption = payload.hubCaption;
-        } else {
-          bodyPayload.text = payload.hubCaption;
-        }
-
-        const r = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyPayload)
-        });
-        const d = await r.json();
-        if (d.ok) {
-          successful.push(hubName);
-          results.push({ type: 'hub', channel: hubName, chatId, success: true, messageId: d.result.message_id });
-        } else {
-          failed.push(hubName);
-          results.push({ type: 'hub', channel: hubName, chatId, success: false, error: d.description });
-        }
-      } catch (e: any) {
-        failed.push(hubName);
-        results.push({ type: 'hub', channel: hubName, chatId, success: false, error: e.message });
-      }
+      await sendToTelegramChannel(chatId, hubName, payload.hubCaption, 'hub');
     }
 
     const status = failed.length === 0 ? 'completed' : successful.length > 0 ? 'partial' : 'failed';

@@ -401,9 +401,16 @@ export const UploadView: React.FC<UploadViewProps> = ({
         language: formData.language,
         imdbRating: formData.imdbRating,
         qualities: validQualities.filter((q) => q.enabled && q.url.trim().length > 0),
-        mainChannelLink: selectedGenreChannels[0]?.username
+        mainChannelLink: selectedGenreChannels[0]?.inviteLink
+          ? selectedGenreChannels[0].inviteLink.trim()
+          : selectedGenreChannels[0]?.username
           ? `https://t.me/${selectedGenreChannels[0].username.replace('@', '')}`
           : 'https://t.me/MovaDetaOfficial',
+        genreChannels: selectedGenreChannels.map((c) => ({
+          name: c.name,
+          inviteLink: c.inviteLink,
+          username: c.username
+        })),
         emojifyStyle: formData.emojifyStyle || 'ultra'
       });
 
@@ -416,7 +423,8 @@ export const UploadView: React.FC<UploadViewProps> = ({
         genreCaption: finalGenreCaption,
         hubCaption: finalHubCaption,
         genreChannels: selectedGenreChannels,
-        hubChannels: selectedHubChannels
+        hubChannels: selectedHubChannels,
+        botToken: settings.telegramBotToken
       });
 
       setCurrentStepIndex(5);

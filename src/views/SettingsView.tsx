@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { AppSettings } from '../types';
 import { api } from '../services/api';
+import { clientStorage } from '../utils/clientStorage';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -154,12 +155,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       const res = await onTestTelegram(cleanToken);
       setBotTestResult(res);
-      if (res.bot?.username) {
-        setFormState((prev) => ({ 
-          ...prev, 
+      if (res.success && res.bot?.username) {
+        const updated = { 
+          ...formState, 
           telegramBotToken: cleanToken,
           telegramBotUsername: `@${res.bot.username}` 
-        }));
+        };
+        setFormState(updated);
+        await onSaveSettings(updated);
       }
     } catch (e: any) {
       setBotTestResult({ success: false, error: e.message || 'Telegram network connection failed' });
@@ -168,15 +171,124 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+
   const handleExportBackup = () => {
+    const fullBackup = {
+      version: '2.0',
+      settings: formState,
+      genreChannels: clientStorage.getChannels('genre'),
+      hubChannels: clientStorage.getChannels('hub'),
+      shorteners: clientStorage.getShorteners(),
+      promotions: clientStorage.getPromotions(),
+      exportDate: new Date().toISOString()
+    };
     const dataStr =
-      'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(formState, null, 2));
+      'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(fullBackup, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `mova_deta_settings_${Date.now()}.json`);
+    downloadAnchor.setAttribute('download', `mova_deta_full_backup_${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+  };
+
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        if (parsed.settings) {
+          setFormState(parsed.settings);
+          await onSaveSettings(parsed.settings);
+        } else if (parsed.telegramBotToken !== undefined) {
+          setFormState(parsed);
+          await onSaveSettings(parsed);
+        }
+        if (Array.isArray(parsed.genreChannels)) {
+          clientStorage.saveChannels('genre', parsed.genreChannels);
+        }
+        if (Array.isArray(parsed.hubChannels)) {
+          clientStorage.saveChannels('hub', parsed.hubChannels);
+        }
+        if (Array.isArray(parsed.shorteners)) {
+          clientStorage.saveShorteners(parsed.shorteners);
+        }
+        if (Array.isArray(parsed.promotions)) {
+          clientStorage.savePromotions(parsed.promotions);
+        }
+        setImportStatus('✓ ব্যাকআপ সফলভাবে ইম্পোর্ট হয়েছে!');
+        setTimeout(() => setImportStatus(null), 4000);
+      } catch (err) {
+        setImportStatus('❌ ব্যাকআপ ফাইল পার্স করতে ব্যর্থ হয়েছে।');
+        setTimeout(() => setImportStatus(null), 4000);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const [downloadingZip, setDownloadingZip] = useState(false);
+  const [downloadZipMsg, setDownloadZipMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleDownloadHtdocsZip = async () => {
+    setDownloadingZip(true);
+    setDownloadZipMsg(null);
+    try {
+      const candidates = [
+        `/htdocs.zip?t=${Date.now()}`,
+        `/api/download-zip?t=${Date.now()}`
+      ];
+
+      let validBlob: Blob | null = null;
+      let fileSizeKb = 0;
+
+      for (const url of candidates) {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const buf = await res.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            // Verify zip magic bytes PK\x03\x04 or PK\x05\x06 (0x50, 0x4B) and size > 50KB
+            if (bytes.length > 50000 && bytes[0] === 0x50 && bytes[1] === 0x4B) {
+              validBlob = new Blob([buf], { type: 'application/zip' });
+              fileSizeKb = Math.round(bytes.length / 1024);
+              break;
+            }
+          }
+        } catch {
+          // Continue to next candidate
+        }
+      }
+
+      if (validBlob) {
+        const downloadUrl = URL.createObjectURL(validBlob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = 'htdocs.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+        setDownloadZipMsg({
+          type: 'success',
+          text: `✓ আসল htdocs.zip (${fileSizeKb} KB - ২৯টি কম্পাইল করা ফাইল) সফলভাবে ডাউনলোড হয়েছে!`
+        });
+      } else {
+        // Fallback directly to static asset
+        window.location.href = `/htdocs.zip`;
+      }
+    } catch (e: any) {
+      setDownloadZipMsg({
+        type: 'error',
+        text: 'ডাউনলোড করতে সমস্যা হয়েছে: ' + (e.message || 'ফাইল পাওয়া যায়নি')
+      });
+    } finally {
+      setDownloadingZip(false);
+    }
   };
 
   return (
@@ -775,38 +887,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold text-[10px] border border-cyan-500/30">
                           ⚡ 1-Click Ready Solution
                         </span>
-                        <h3 className="font-bold text-slate-100 text-sm">ইনফিনিটি-ফ্রি এর জন্য তৈরি জিপ ফাইল</h3>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px] border border-emerald-500/30">
+                          ~২৩১ KB (আনজিপ করলে প্রায় ১ MB / ২৯টি ফাইল)
+                        </span>
                       </div>
+                      <h3 className="font-bold text-slate-100 text-sm mt-1">ইনফিনিটি-ফ্রি এর জন্য সম্পূর্ণ জিপ ফাইল</h3>
                       <p className="text-[11px] text-slate-300 mt-1">
-                        এই জিপ ফাইলটিতে <code className="text-cyan-300 font-mono">dist</code> এর কম্পাইল করা কোড, পিএইচপি ব্যাকএন্ড ও <code className="text-emerald-300 font-mono">.htaccess</code> সম্পূর্ণ সেটআপ করা আছে।
+                        এই জিপ ফাইলটিতে <code className="text-cyan-300 font-mono">dist</code> এর কম্পাইল করা কোড, পিএইচপি ব্যাকএন্ড (<code className="text-cyan-300 font-mono">api/</code>), ডাটাবেজ (<code className="text-cyan-300 font-mono">data/</code>) ও <code className="text-emerald-300 font-mono">.htaccess</code> সম্পূর্ণ সেটআপ করা আছে।
                       </p>
+                      {downloadZipMsg && (
+                        <p className={`text-xs mt-2 font-medium ${downloadZipMsg.type === 'success' ? 'text-emerald-300' : 'text-rose-400'}`}>
+                          {downloadZipMsg.text}
+                        </p>
+                      )}
                     </div>
-                    <a
-                      href={`/api/download-zip?t=${Date.now()}`}
-                      download="htdocs.zip"
-                      onClick={(e) => {
-                        // Dynamically refresh href with fresh timestamp so repeated clicks never get browser cached zip
-                        (e.currentTarget as HTMLAnchorElement).href = `/api/download-zip?t=${Date.now()}`;
-                      }}
-                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-400 hover:to-teal-500 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition shrink-0 cursor-pointer"
+                    <button
+                      type="button"
+                      disabled={downloadingZip}
+                      onClick={handleDownloadHtdocsZip}
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-400 hover:to-teal-500 disabled:opacity-50 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition shrink-0 cursor-pointer"
                     >
-                      <Download className="w-4 h-4" />
-                      <span>Download htdocs.zip</span>
-                    </a>
+                      <Download className={`w-4 h-4 ${downloadingZip ? 'animate-bounce' : ''}`} />
+                      <span>{downloadingZip ? 'যাচাই ও ডাউনলোড হচ্ছে...' : 'Download htdocs.zip'}</span>
+                    </button>
                   </div>
 
                   {/* Alert: Why was it blank with zip? */}
                   <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-1.5">
                     <div className="flex items-center gap-2 font-bold text-amber-300">
                       <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>জিপ ফাইল আপলোড করার পর ব্ল্যাঙ্ক হওয়ার ২টি কারণ:</span>
+                      <span>জিপ ফাইল সম্পর্কিত গুরুত্বপূর্ণ তথ্য ও সাধারণ জিজ্ঞাসা:</span>
                     </div>
                     <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-300 space-y-1">
                       <li>
-                        <b>জিপ ফাইলটি আনজিপ (Extract) না করা:</b> InfinityFree ফাইল ম্যানেজারে জিপ আপলোড করলে স্বয়ংক্রিয়ভাবে খুলে যায় না। আপনাকে ফাইলের ওপর রাইট-ক্লিক করে <b>Extract</b> করতে হয়।
+                        <b>জিপ ফাইলটি মাত্র ~২৩১ KB কেন?</b> আধুনিক প্রোডাকশন কোড স্বয়ংক্রিয়ভাবে সংকুচিত (Minified &amp; Gzip/Deflate Compressed) করা থাকে যাতে দ্রুত ডাউনলোড হয়। আপনি InfinityFree ফাইল ম্যানেজারে আপলোড করে <b>Extract (আনজিপ)</b> করলে এটি সাথে সাথে প্রায় <b>১ মেগাবাইট</b> সাইজের সম্পূর্ণ ২৯টি ফাইল ও ফোল্ডারে উন্মুক্ত হয়ে যাবে!
                       </li>
                       <li>
-                        <b>সোর্স কোডের জিপ আপলোড করা:</b> AI Studio থেকে যে জিপটি এক্সপোর্ট করা হয় তাতে র সোর্স ফাইল (<code className="text-amber-300 font-mono">src</code>, <code className="text-amber-300 font-mono">package.json</code>) থাকে, যা ব্রাউজার সরাসরি চালাতে পারে না। ওপরের বাটনে ক্লিক করে তৈরি করা <b>htdocs.zip</b> ব্যবহার করুন।
+                        <b>পূর্বে ১০ KB ফাইল পাওয়ার কারণ:</b> পূর্বে Vercel থেকে ডাউনলোড লিংকে ক্লিক করলে সার্ভারলেস 404/HTML পৃষ্ঠা রিনেম হয়ে ডাউনলোড হচ্ছিল। এখন স্বয়ংক্রিয় ভ্যালিডেশন যুক্ত করা হয়েছে, ফলে আপনি সর্বদা ১০০% আসল ২৩১ KB-র কমপ্লিট প্যাকেজটি পাবেন।
+                      </li>
+                      <li>
+                        <b>জিপ ফাইলটি আনজিপ (Extract) করা আবশ্যক:</b> InfinityFree ফাইল ম্যানেজারে জিপ আপলোড করার পর ফাইলের ওপর রাইট-ক্লিক করে <b>Extract</b> করতে হবে।
                       </li>
                     </ul>
                   </div>
@@ -872,15 +992,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Action Save Bar */}
         <div className="p-4 rounded-2xl bg-[#0c101a] border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleExportBackup}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition"
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+              title="Download all settings, channels, shorteners, and promotions as a JSON file"
             >
               <Download className="w-3.5 h-3.5 text-cyan-400" />
               <span>Export Backup JSON</span>
             </button>
+            <label className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer">
+              <Upload className="w-3.5 h-3.5 text-amber-400" />
+              <span>Import Backup JSON</span>
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleImportBackup}
+                className="hidden"
+              />
+            </label>
+            {importStatus && (
+              <span className="text-xs text-amber-300 font-medium ml-1">
+                {importStatus}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">

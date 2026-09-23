@@ -49,13 +49,26 @@ $method = $_SERVER['REQUEST_METHOD'];
 function telegramRequest($token, $method, $params = []) {
     $url = "https://api.telegram.org/bot{$token}/{$method}";
     
+    // Check if any parameter is a file upload
+    $hasFile = false;
+    foreach ($params as $k => $v) {
+        if ($v instanceof CURLFile) {
+            $hasFile = true;
+            break;
+        }
+    }
+
     if (function_exists('curl_init')) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+        if ($hasFile) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+        } else {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+        }
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         $res = curl_exec($ch);
         $err = curl_error($ch);
@@ -71,7 +84,7 @@ function telegramRequest($token, $method, $params = []) {
             'method' => 'POST',
             'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
             'content' => http_build_query($params),
-            'timeout' => 15
+            'timeout' => 20
         ]
     ];
     $ctx = stream_context_create($opts);
@@ -131,8 +144,17 @@ if ($action === 'publish' && $method === 'POST') {
     $movieTitle = $input['movieTitle'] ?? 'Untitled Movie';
     $year = $input['year'] ?? '';
     $photoUrl = $input['photoUrl'] ?? '';
+    $localImagePath = null;
     
-    // If photoUrl is base64 data URI (e.g. from Canvas Studio / auto-generated thumbnail), save it to /uploads/posters/
+    // Check if client provided botToken in payload
+    $activeToken = !empty($input['botToken']) ? trim($input['botToken']) : $savedToken;
+    if (!empty($input['botToken']) && empty($savedToken)) {
+        $settings['telegramBotToken'] = $input['botToken'];
+        @file_put_contents($settingsFile, json_encode($settings, JSON_PRETTY_PRINT));
+        $savedToken = $input['botToken'];
+    }
+
+    // If photoUrl is base64 data URI (e.g. from Canvas Studio), save it to /uploads/posters/
     if (strpos($photoUrl, 'data:image/') === 0) {
         if (preg_match('/^data:image\/(\w+);base64,(.+)$/', $photoUrl, $matches)) {
             $ext = in_array(strtolower($matches[1]), ['png', 'webp', 'jpg', 'jpeg']) ? strtolower($matches[1]) : 'jpg';
@@ -144,6 +166,7 @@ if ($action === 'publish' && $method === 'POST') {
             }
             $targetPath = $uploadDir . $filename;
             if (@file_put_contents($targetPath, base64_decode($matches[2]))) {
+                $localImagePath = $targetPath;
                 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
                 $host = $_SERVER['HTTP_HOST'] ?? 'localhost:3000';
                 $photoUrl = $protocol . '://' . $host . '/uploads/posters/' . $filename;
@@ -155,122 +178,123 @@ if ($action === 'publish' && $method === 'POST') {
     $hubCaption = $input['hubCaption'] ?? '';
     $genreChannels = $input['genreChannels'] ?? [];
     $hubChannels = $input['hubChannels'] ?? [];
-    $isDemo = empty($savedToken) || !empty($input['demoMode']);
+    $isDemo = empty($activeToken) || !empty($input['demoMode']);
     
     $successful = [];
     $failed = [];
     $results = [];
-    
-    // Publish to Genre Channels
-    foreach ($genreChannels as $channel) {
-        $chatId = $channel['chatId'] ?? $channel['username'] ?? '';
-        $channelName = $channel['name'] ?? $chatId;
-        
+
+    // Helper to post to a Telegram channel with fallback support
+    $postToChannel = function($chatId, $channelName, $captionText, $type) use ($activeToken, $isDemo, $photoUrl, $localImagePath, &$successful, &$failed, &$results) {
         if ($isDemo) {
-            // Simulated Telegram Response
             $successful[] = $channelName;
             $results[] = [
-                'type' => 'genre',
+                'type' => $type,
                 'channel' => $channelName,
                 'chatId' => $chatId,
                 'success' => true,
                 'simulated' => true,
                 'messageId' => rand(1000, 9999)
             ];
-            continue;
+            return;
         }
-        
-        // Real Telegram Post via sendPhoto or sendMessage
-        $params = [
+
+        // 1. Try sending Photo if available
+        if (!empty($photoUrl)) {
+            $photoCaption = $captionText;
+            if (mb_strlen($photoCaption) > 1020) {
+                $photoCaption = mb_substr($photoCaption, 0, 1017) . '...';
+            }
+
+            $params = [
+                'chat_id' => $chatId,
+                'caption' => $photoCaption,
+                'parse_mode' => 'HTML',
+                'disable_web_page_preview' => false
+            ];
+
+            // If local file exists, upload directly via CURLFile to bypass InfinityFree hotlink/bot blocker
+            if ($localImagePath && file_exists($localImagePath) && class_exists('CURLFile')) {
+                $params['photo'] = new CURLFile($localImagePath);
+            } else {
+                $params['photo'] = $photoUrl;
+            }
+
+            $tgRes = telegramRequest($activeToken, 'sendPhoto', $params);
+            if (!empty($tgRes['ok'])) {
+                $successful[] = $channelName;
+                $results[] = [
+                    'type' => $type,
+                    'channel' => $channelName,
+                    'chatId' => $chatId,
+                    'success' => true,
+                    'messageId' => $tgRes['result']['message_id'] ?? null
+                ];
+                return;
+            }
+        }
+
+        // 2. Fallback to sendMessage (up to 4096 characters)
+        $textParams = [
             'chat_id' => $chatId,
-            'caption' => $genreCaption,
+            'text' => $captionText,
             'parse_mode' => 'HTML',
             'disable_web_page_preview' => false
         ];
-        
-        if (!empty($photoUrl)) {
-            $params['photo'] = $photoUrl;
-            $tgRes = telegramRequest($savedToken, 'sendPhoto', $params);
-        } else {
-            unset($params['caption']);
-            $params['text'] = $genreCaption;
-            $tgRes = telegramRequest($savedToken, 'sendMessage', $params);
-        }
-        
+        $tgRes = telegramRequest($activeToken, 'sendMessage', $textParams);
+
         if (!empty($tgRes['ok'])) {
             $successful[] = $channelName;
             $results[] = [
-                'type' => 'genre',
+                'type' => $type,
                 'channel' => $channelName,
                 'chatId' => $chatId,
                 'success' => true,
                 'messageId' => $tgRes['result']['message_id'] ?? null
             ];
-        } else {
-            $failed[] = $channelName;
-            $results[] = [
-                'type' => 'genre',
-                'channel' => $channelName,
-                'chatId' => $chatId,
-                'success' => false,
-                'error' => $tgRes['description'] ?? 'Failed to post'
-            ];
+            return;
         }
+
+        // If HTML parsing failed due to unclosed tags or special characters, retry without HTML
+        if (!empty($tgRes['description']) && (stripos($tgRes['description'], 'parse') !== false || stripos($tgRes['description'], 'entity') !== false)) {
+            $textParams['text'] = strip_tags($captionText);
+            unset($textParams['parse_mode']);
+            $retryRes = telegramRequest($activeToken, 'sendMessage', $textParams);
+            if (!empty($retryRes['ok'])) {
+                $successful[] = $channelName;
+                $results[] = [
+                    'type' => $type,
+                    'channel' => $channelName,
+                    'chatId' => $chatId,
+                    'success' => true,
+                    'messageId' => $retryRes['result']['message_id'] ?? null
+                ];
+                return;
+            }
+        }
+
+        $failed[] = $channelName;
+        $results[] = [
+            'type' => $type,
+            'channel' => $channelName,
+            'chatId' => $chatId,
+            'success' => false,
+            'error' => $tgRes['description'] ?? 'Failed to post to Telegram'
+        ];
+    };
+    
+    // Publish to Genre Channels
+    foreach ($genreChannels as $channel) {
+        $chatId = $channel['chatId'] ?? $channel['username'] ?? '';
+        $channelName = $channel['name'] ?? $chatId;
+        $postToChannel($chatId, $channelName, $genreCaption, 'genre');
     }
     
     // Publish to Hub Channels
     foreach ($hubChannels as $hub) {
         $chatId = $hub['chatId'] ?? $hub['username'] ?? '';
         $hubName = $hub['name'] ?? $chatId;
-        
-        if ($isDemo) {
-            $successful[] = $hubName;
-            $results[] = [
-                'type' => 'hub',
-                'channel' => $hubName,
-                'chatId' => $chatId,
-                'success' => true,
-                'simulated' => true,
-                'messageId' => rand(1000, 9999)
-            ];
-            continue;
-        }
-        
-        $params = [
-            'chat_id' => $chatId,
-            'caption' => $hubCaption,
-            'parse_mode' => 'HTML',
-            'disable_web_page_preview' => false
-        ];
-        
-        if (!empty($photoUrl)) {
-            $params['photo'] = $photoUrl;
-            $tgRes = telegramRequest($savedToken, 'sendPhoto', $params);
-        } else {
-            unset($params['caption']);
-            $params['text'] = $hubCaption;
-            $tgRes = telegramRequest($savedToken, 'sendMessage', $params);
-        }
-        
-        if (!empty($tgRes['ok'])) {
-            $successful[] = $hubName;
-            $results[] = [
-                'type' => 'hub',
-                'channel' => $hubName,
-                'chatId' => $chatId,
-                'success' => true,
-                'messageId' => $tgRes['result']['message_id'] ?? null
-            ];
-        } else {
-            $failed[] = $hubName;
-            $results[] = [
-                'type' => 'hub',
-                'channel' => $hubName,
-                'chatId' => $chatId,
-                'success' => false,
-                'error' => $tgRes['description'] ?? 'Failed to post'
-            ];
-        }
+        $postToChannel($chatId, $hubName, $hubCaption, 'hub');
     }
     
     // Overall status
