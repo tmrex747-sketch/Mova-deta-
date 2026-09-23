@@ -149,46 +149,101 @@ export async function generateMovieThumbnail(options: ThumbnailOptions): Promise
   ctx.fillStyle = topGrad;
   ctx.fillRect(0, 0, WIDTH, 95);
 
-  // 4. Top Header Bar: Channel / Brand & Quality Pill
-  const channelText = (options.channelName || 'MOVA DETA CINEMA').toUpperCase().trim();
+  // 4. Top Header Bar: Channel / Brand (Supports 1, 2, or 3 lines) & Quality Pill
+  const rawBrand = (options.channelName || 'MOVA DETA CINEMA').trim();
+  const rawLines = rawBrand
+    .split(/[\r\n]+|\|\|/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const brandLines = rawLines.length > 0 ? rawLines : ['MOVA DETA CINEMA'];
+
   ctx.save();
-  
-  // Set font first to measure text accurately
-  const brandFont = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.font = brandFont;
-  const brandTextWidth = ctx.measureText(channelText).width;
-  
-  // Calculate dynamic pill width: Left padding (18) + dot diameter (10) + gap (10) + text width + right padding (18)
+  const lineCount = brandLines.length;
   const pillPaddingX = 18;
   const dotWidth = 10;
   const dotTextGap = 10;
-  const brandPillWidth = Math.max(140, Math.round(pillPaddingX + dotWidth + dotTextGap + brandTextWidth + pillPaddingX));
-  const brandPillHeight = 42;
   const brandPillX = 45;
   const brandPillY = 35;
 
+  let brandPillHeight = 42;
+  if (lineCount === 2) brandPillHeight = 54;
+  else if (lineCount === 3) brandPillHeight = 68;
+
+  // Measure max width among the lines
+  let maxTextWidth = 0;
+  const fonts = [
+    'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    lineCount === 3 ? 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' : 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+  ];
+
+  brandLines.forEach((line, idx) => {
+    ctx.font = fonts[idx] || fonts[0];
+    const w = ctx.measureText(line.toUpperCase()).width;
+    if (w > maxTextWidth) maxTextWidth = w;
+  });
+
+  const brandPillWidth = Math.max(140, Math.round(pillPaddingX + dotWidth + dotTextGap + maxTextWidth + pillPaddingX));
+
   // Draw Dynamic Brand Pill Box
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';
   drawRoundedRect(ctx, brandPillX, brandPillY, brandPillWidth, brandPillHeight, 10);
   ctx.fill();
   ctx.strokeStyle = 'rgba(245, 158, 11, 0.55)';
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Amber glow dot (vertically centered)
+  // Amber glow dot (vertically aligned with first line or center)
   const dotCenterX = brandPillX + pillPaddingX + (dotWidth / 2);
-  const dotCenterY = brandPillY + (brandPillHeight / 2);
+  const dotCenterY = lineCount === 1 
+    ? brandPillY + (brandPillHeight / 2)
+    : brandPillY + 18;
+
   ctx.fillStyle = '#f59e0b';
   ctx.beginPath();
   ctx.arc(dotCenterX, dotCenterY, 5, 0, Math.PI * 2);
   ctx.fill();
 
-  // Brand text (vertically centered)
-  ctx.fillStyle = '#ffffff';
-  ctx.font = brandFont;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(channelText, brandPillX + pillPaddingX + dotWidth + dotTextGap, dotCenterY);
+  // Draw each branding line with distinct hierarchy
+  const textStartX = brandPillX + pillPaddingX + dotWidth + dotTextGap;
+  if (lineCount === 1) {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = fonts[0];
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(brandLines[0].toUpperCase(), textStartX, brandPillY + (brandPillHeight / 2));
+  } else if (lineCount === 2) {
+    // Line 1: Primary Channel Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = fonts[0];
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(brandLines[0].toUpperCase(), textStartX, brandPillY + 9);
+
+    // Line 2: Tagline / Sub-badge
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = fonts[1];
+    ctx.fillText(brandLines[1].toUpperCase(), textStartX, brandPillY + 30);
+  } else {
+    // Line 1: Primary Channel Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(brandLines[0].toUpperCase(), textStartX, brandPillY + 8);
+
+    // Line 2: Secondary / Badge
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(brandLines[1].toUpperCase(), textStartX, brandPillY + 27);
+
+    // Line 3: Tagline / CTA
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(brandLines[2].toUpperCase(), textStartX, brandPillY + 45);
+  }
+
   ctx.restore();
 
   // Top Right: 4K ULTRA HD / Qualities badge

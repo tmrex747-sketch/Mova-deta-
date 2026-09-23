@@ -12,6 +12,7 @@ export interface AppSettings {
   pinCode: string;
   timezone: string;
   isDemoMode?: boolean;
+  canvasBrandingName?: string;
 }
 
 export interface Shortener {
@@ -30,6 +31,7 @@ export interface GenreChannel {
   name: string;
   username: string;
   chatId: string;
+  inviteLink?: string;
   genreLabel?: string;
   isPrivate: boolean;
   active: boolean;
@@ -40,6 +42,7 @@ export interface HubChannel {
   name: string;
   username: string;
   chatId: string;
+  inviteLink?: string;
   isPrivate: boolean;
   active: boolean;
 }

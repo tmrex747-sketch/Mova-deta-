@@ -27,6 +27,7 @@ export const TMDBModal: React.FC<TMDBModalProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('trending');
   const [loading, setLoading] = useState(false);
   const [movies, setMovies] = useState<TMDBMovie[]>([]);
+  const [source, setSource] = useState<string>('tmdb_live');
   const [cleanedNotice, setCleanedNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export const TMDBModal: React.FC<TMDBModalProps> = ({
     try {
       const res = await api.searchTMDB(q, cat || selectedCategory);
       setMovies(res.results || []);
+      setSource(res.source || 'magic_library');
       if (res.cleanedQuery && res.cleanedQuery !== q) {
         setCleanedNotice(res.cleanedQuery);
       } else {
@@ -77,12 +79,22 @@ export const TMDBModal: React.FC<TMDBModalProps> = ({
               <Sparkles className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-slate-100 flex items-center gap-2">
-                <span>TMDB Magic Search Explorer</span>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                  Smart Auto-Fill
-                </span>
-              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base sm:text-lg font-bold text-slate-100">
+                  TMDB Magic Search Explorer
+                </h2>
+                {source === 'tmdb_live' ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live TMDB Active
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    Demo/Offline Library
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">
                 মুভির নাম বা লিংক লিখে সার্চ করুন — স্বয়ংক্রিয় ১৬:৯ থাম্বনেইল, টাইটেল ও তথ্য ফর্মটিতে ইমপোর্ট হবে।
               </p>

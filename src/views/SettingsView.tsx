@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings,
   Bot,
@@ -20,7 +20,9 @@ import {
   HelpCircle,
   ChevronDown,
   ChevronUp,
-  FileCode2
+  FileCode2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { AppSettings } from '../types';
 import { api } from '../services/api';
@@ -42,6 +44,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [testingBot, setTestingBot] = useState(false);
   const [showHostingGuide, setShowHostingGuide] = useState(true);
   const [activeDeployTab, setActiveDeployTab] = useState<'vercel' | 'infinityfree'>('vercel');
+  const [showBotToken, setShowBotToken] = useState(false);
+  const [showTmdbKey, setShowTmdbKey] = useState(false);
+  const [testingTmdb, setTestingTmdb] = useState(false);
+  const [tmdbTestResult, setTmdbTestResult] = useState<{
+    success?: boolean;
+    isDemo?: boolean;
+    message?: string;
+    error?: string;
+  } | null>(null);
   const [botTestResult, setBotTestResult] = useState<{
     success?: boolean;
     isDemo?: boolean;
@@ -49,12 +60,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     error?: string;
   } | null>(null);
 
+  useEffect(() => {
+    setFormState(settings);
+  }, [settings]);
+
+  // Split canvas branding into 3 lines
+  const brandingLines = (formState.canvasBrandingName || '')
+    .split(/[\r\n]+|\|\|/)
+    .map((s) => s.trim());
+  const brandLine1 = brandingLines[0] || '';
+  const brandLine2 = brandingLines[1] || '';
+  const brandLine3 = brandingLines[2] || '';
+
+  const handleUpdateBrandingLine = (index: 0 | 1 | 2, value: string) => {
+    const nextLines = [brandLine1, brandLine2, brandLine3];
+    nextLines[index] = value;
+    // Join with newline, trimming excess trailing empty lines
+    while (nextLines.length > 0 && !nextLines[nextLines.length - 1].trim()) {
+      nextLines.pop();
+    }
+    setFormState({
+      ...formState,
+      canvasBrandingName: nextLines.join('\n')
+    });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     setSaveSuccess(false);
     try {
-      await onSaveSettings(formState);
+      const sanitizedSettings = {
+        ...formState,
+        telegramBotToken: formState.telegramBotToken?.trim() || '',
+        tmdbApiKey: formState.tmdbApiKey?.trim().replace(/^['"]|['"]$/g, '') || '',
+        canvasBrandingName: formState.canvasBrandingName?.trim() || ''
+      };
+      setFormState(sanitizedSettings);
+      await onSaveSettings(sanitizedSettings);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (e) {
@@ -64,17 +107,62 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const handleTestTMDB = async () => {
+    const cleanKey = formState.tmdbApiKey?.trim().replace(/^['"]|['"]$/g, '') || '';
+    if (!cleanKey) {
+      setTmdbTestResult({
+        success: false,
+        isDemo: true,
+        error: 'TMDB API Key খালি! themoviedb.org থেকে API Key দিয়ে টেস্ট করুন।'
+      });
+      return;
+    }
+    setTestingTmdb(true);
+    setTmdbTestResult(null);
+    try {
+      const res = await api.testTMDBConnection(cleanKey);
+      setTmdbTestResult(res);
+      if (res.success) {
+        await onSaveSettings({
+          ...formState,
+          tmdbApiKey: cleanKey
+        });
+      }
+    } catch (e: any) {
+      setTmdbTestResult({
+        success: false,
+        isDemo: false,
+        error: e.message || 'TMDB যাচাই করা যায়নি।'
+      });
+    } finally {
+      setTestingTmdb(false);
+    }
+  };
+
   const handleTestBot = async () => {
+    const cleanToken = formState.telegramBotToken?.trim() || '';
+    if (!cleanToken) {
+      setBotTestResult({
+        success: false,
+        isDemo: true,
+        error: 'বট টোকেন খালি! দয়া করে @BotFather থেকে পাওয়া টোকেনটি এখানে পেস্ট করুন।'
+      });
+      return;
+    }
     setTestingBot(true);
     setBotTestResult(null);
     try {
-      const res = await onTestTelegram(formState.telegramBotToken);
+      const res = await onTestTelegram(cleanToken);
       setBotTestResult(res);
       if (res.bot?.username) {
-        setFormState((prev) => ({ ...prev, telegramBotUsername: `@${res.bot.username}` }));
+        setFormState((prev) => ({ 
+          ...prev, 
+          telegramBotToken: cleanToken,
+          telegramBotUsername: `@${res.bot.username}` 
+        }));
       }
     } catch (e: any) {
-      setBotTestResult({ success: false, error: e.message });
+      setBotTestResult({ success: false, error: e.message || 'Telegram network connection failed' });
     } finally {
       setTestingBot(false);
     }
@@ -118,41 +206,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Telegram Bot HTTP API Token
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-300">
+                Telegram Bot HTTP API Token
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowBotToken(!showBotToken)}
+                className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 transition select-none"
+              >
+                {showBotToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span>{showBotToken ? 'Hide Token' : 'Show Token'}</span>
+              </button>
+            </div>
+
             <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="password"
-                value={formState.telegramBotToken}
-                onChange={(e) =>
-                  setFormState({ ...formState, telegramBotToken: e.target.value })
-                }
-                placeholder="e.g. 7123456789:AAHk1_xxxxxxxxxxxxxxxxxxx"
-                className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-white/10 text-xs text-slate-100 placeholder-slate-500 font-mono focus:border-amber-500/50 outline-none"
-              />
+              <div className="relative flex-1">
+                <input
+                  type={showBotToken ? 'text' : 'password'}
+                  value={formState.telegramBotToken}
+                  onChange={(e) =>
+                    setFormState({ ...formState, telegramBotToken: e.target.value })
+                  }
+                  placeholder="e.g. 7123456789:AAHk1_xxxxxxxxxxxxxxxxxxx"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-white/10 text-xs text-slate-100 placeholder-slate-500 font-mono focus:border-amber-500/50 outline-none"
+                />
+              </div>
               <button
                 type="button"
                 onClick={handleTestBot}
                 disabled={testingBot}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition shrink-0"
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shrink-0 shadow-lg shadow-emerald-500/10"
               >
                 {testingBot ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
                 ) : (
-                  <RefreshCw className="w-4 h-4 text-amber-400" />
+                  <RefreshCw className="w-4 h-4 text-white" />
                 )}
                 <span>Test Connection</span>
               </button>
             </div>
+            
             <p className="text-[11px] text-slate-400 mt-1.5">
-              Obtain from <code>@BotFather</code> on Telegram. Keep private. The token is saved in server-side <code>data/settings.json</code>.
+              টেলিগ্রামে <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-cyan-400 underline">@BotFather</a>-এ গিয়ে <code className="text-amber-300">/token</code> অথবা নতুন বট তৈরির পর পাওয়া পুরো HTTP API টোকেনটি এখানে দিন।
             </p>
           </div>
 
           {botTestResult && (
             <div
-              className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+              className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
                 botTestResult.success
                   ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
                   : botTestResult.isDemo
@@ -163,19 +265,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {botTestResult.success ? (
                 <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               ) : (
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               )}
-              <div>
-                <div className="font-semibold">
+              <div className="flex-1">
+                <div className="font-semibold text-sm">
                   {botTestResult.success
-                    ? 'Connection Succeeded!'
+                    ? '✓ Telegram Bot কানেকশন সফল হয়েছে!'
                     : botTestResult.isDemo
-                    ? 'Operating in Demo Mode'
-                    : 'Connection Failed'}
+                    ? 'ডেমো মোড সক্রিয়'
+                    : '✗ বট কানেকশন ব্যর্থ হয়েছে (Connection Failed)'}
                 </div>
-                <div className="text-[11px] opacity-90 mt-0.5">
+                <div className="text-[11px] opacity-90 mt-1 font-mono">
                   {botTestResult.message || botTestResult.error}
                 </div>
+
+                {!botTestResult.success && !botTestResult.isDemo && (
+                  <div className="mt-2.5 p-2.5 rounded-lg bg-black/40 border border-white/5 space-y-1 text-[11px] text-slate-300">
+                    <div className="font-bold text-amber-300">কেন বট কানেক্ট হচ্ছে না? চেক করুন:</div>
+                    <div>১. টোকেনের শুরুতে বা শেষে কোনো অতিরিক্ত স্পেস বা ফাঁকা জায়গা আছে কিনা (Show Token দিয়ে মিলিয়ে নিন)।</div>
+                    <div>২. টোকেন ফরম্যাট ঠিক আছে কি না (যেমন: <code className="text-cyan-300 font-mono">123456789:ABCDefgh-1234xxxx</code>)।</div>
+                    <div>৩. টেলিগ্রামে <b>@BotFather</b>-এ গিয়ে <code>/mybots</code> &gt; আপনার বট &gt; <b>API Token</b> রিভোক করে নতুন টোকেন নিয়ে চেষ্টা করতে পারেন।</div>
+                    <div>৪. টোকেন দেওয়ার পর নিচের <b>"Save Changes"</b> বাটনে চাপ দিয়ে সেভ করে নিন।</div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -238,27 +350,225 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Film className="w-4 h-4 text-cyan-400" />
               <span>The Movie Database (TMDB) API</span>
             </h2>
-            <span className="text-[10px] text-slate-400">Optional (Sample library active if empty)</span>
+            <span className="text-[10px] text-slate-400">v3 API Key বা v4 Bearer Token</span>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              TMDB v3 API Key
-            </label>
-            <input
-              type="password"
-              value={formState.tmdbApiKey}
-              onChange={(e) => setFormState({ ...formState, tmdbApiKey: e.target.value })}
-              placeholder="Enter TMDB v3 API key from themoviedb.org"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-white/10 text-xs text-slate-100 placeholder-slate-500 font-mono focus:border-amber-500/50 outline-none"
-            />
-            <p className="text-[11px] text-slate-400 mt-1">
-              If left blank, Mova Deta automatically uses its built-in sample movie library for instant searching.
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-300">
+                TMDB API Key / Read Access Token
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowTmdbKey(!showTmdbKey)}
+                className="text-[11px] text-slate-400 hover:text-cyan-300 flex items-center gap-1 transition"
+              >
+                {showTmdbKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span>{showTmdbKey ? 'Hide Key' : 'Show Key'}</span>
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type={showTmdbKey ? 'text' : 'password'}
+                value={formState.tmdbApiKey}
+                onChange={(e) => setFormState({ ...formState, tmdbApiKey: e.target.value })}
+                placeholder="themoviedb.org থেকে পাওয়া API Key বা v4 Token দিন"
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-white/10 text-xs text-slate-100 placeholder-slate-500 font-mono focus:border-cyan-500/50 outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleTestTMDB}
+                disabled={testingTmdb}
+                className="px-4 py-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 font-semibold text-xs transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                {testingTmdb ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                )}
+                <span>{testingTmdb ? 'Testing...' : 'Test TMDB'}</span>
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+              💡 কী দিয়ে <b>Test TMDB</b> বাটনে চাপ দিন। টেস্ট সফল হলে স্বয়ংক্রিয়ভাবে সেভ হবে এবং TMDB Explorer-এ রিয়েল-টাইম মুভি ডাটা চলে আসবে। ফাঁকা রাখলে অফলাইন ডেমো লাইব্রেরি চলবে।
             </p>
+          </div>
+
+          {/* TMDB Test Feedback Alert */}
+          {tmdbTestResult && (
+            <div
+              className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs animate-in fade-in duration-200 ${
+                tmdbTestResult.success
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : tmdbTestResult.isDemo
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              }`}
+            >
+              {tmdbTestResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              ) : tmdbTestResult.isDemo ? (
+                <HelpCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <div className="font-semibold text-sm">
+                  {tmdbTestResult.success
+                    ? '✓ TMDB API সংযোগ সফল ও কার্যকর!'
+                    : tmdbTestResult.isDemo
+                    ? 'অফলাইন স্যাম্পল লাইব্রেরি সক্রিয়'
+                    : '✗ TMDB কী অকার্যকর বা সংযোগ ব্যর্থ (Connection Failed)'}
+                </div>
+                <div className="text-[11px] opacity-90 mt-1 font-mono">
+                  {tmdbTestResult.message || tmdbTestResult.error}
+                </div>
+
+                {!tmdbTestResult.success && !tmdbTestResult.isDemo && (
+                  <div className="mt-2.5 p-2.5 rounded-lg bg-black/40 border border-white/5 space-y-1 text-[11px] text-slate-300">
+                    <div className="font-bold text-cyan-300">কেন TMDB কাজ করছে না? চেক করুন:</div>
+                    <div>১. কী এর শুরুতে বা শেষে কোনো অতিরিক্ত স্পেস বা ফাঁকা জায়গা আছে কিনা (Show Key দিয়ে দেখে নিন)।</div>
+                    <div>২. <b>themoviedb.org</b> &gt; আপনার অ্যাকাউন্ট &gt; <b>Settings &gt; API</b> তে গিয়ে <b>API Key (v3 auth)</b> কপি করেছেন কি না।</div>
+                    <div>৩. আপনি যদি <b>API Read Access Token (v4 auth)</b> ব্যবহার করেন, তাও এখন সাপোর্ট করবে।</div>
+                    <div>৪. কী দেওয়ার পর নিচে <b>"Save Changes"</b> বাটনে চাপ দিয়ে সেভ নিশ্চিত করুন।</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Section 4: 16:9 Canvas Channel Branding (3 Lines) */}
+        <div className="p-5 rounded-2xl bg-[#0c101a] border border-amber-500/20 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/5 pb-3 gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>16:9 Canvas Channel Branding (ক্যানভাস ব্র্যান্ডিং - ৩ লাইন)</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                ক্যানভাস থাম্বনেইলের উপরের বাম কোণের ব্র্যান্ড পিলে যে নাম থাকবে তা এখানে ৩ লাইনে লিখে সেভ করে রাখুন। সেভ করলেই থাম্বনেইল স্টুডিও ও অটো-ক্যানভাসে এটি স্বয়ংক্রিয়ভাবে চলে আসবে।
+              </p>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 self-start sm:self-center font-mono">
+              Auto-Loaded in Canvas
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Input fields for 3 lines */}
+            <div className="lg:col-span-7 space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-amber-300 mb-1 flex items-center justify-between">
+                  <span>Line 1: Main Channel Name (প্রধান নাম)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">Bold High Contrast</span>
+                </label>
+                <input
+                  type="text"
+                  value={brandLine1}
+                  onChange={(e) => handleUpdateBrandingLine(0, e.target.value)}
+                  placeholder="e.g. MOVA DETA"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-100 font-mono tracking-wide focus:border-amber-500/50 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-cyan-300 mb-1 flex items-center justify-between">
+                  <span>Line 2: Sub-Badge / Category (সাব-ক্যাটাগরি বা ব্যাজ)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">Optional</span>
+                </label>
+                <input
+                  type="text"
+                  value={brandLine2}
+                  onChange={(e) => handleUpdateBrandingLine(1, e.target.value)}
+                  placeholder="e.g. CINEMA HUB or HOLLYWOOD HINDI"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-100 font-mono tracking-wide focus:border-cyan-500/50 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Line 3: Tagline / Telegram Handle (ট্যাগলাইন বা টেলিগ্রাম আইডি)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">Optional</span>
+                </label>
+                <input
+                  type="text"
+                  value={brandLine3}
+                  onChange={(e) => handleUpdateBrandingLine(2, e.target.value)}
+                  placeholder="e.g. JOIN @CHANNEL or EXCLUSIVE MOVIES"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-100 font-mono tracking-wide focus:border-amber-500/50 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateBrandingLine(0, 'MOVA DETA');
+                    handleUpdateBrandingLine(1, 'CINEMA HUB');
+                    handleUpdateBrandingLine(2, 'JOIN @MOVADETAOFFICIAL');
+                  }}
+                  className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
+                >
+                  ⚡ Fill Sample (MOVA DETA)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormState({ ...formState, canvasBrandingName: '' });
+                  }}
+                  className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 transition cursor-pointer"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+
+            {/* Live Visual Canvas Pill Preview */}
+            <div className="lg:col-span-5 p-4 rounded-xl bg-slate-950 border border-white/5 flex flex-col justify-between">
+              <div>
+                <div className="text-[11px] font-semibold text-slate-400 mb-2 flex items-center justify-between">
+                  <span>ক্যানভাস থাম্বনেইলে যেমন দেখাবে:</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">Live Preview</span>
+                </div>
+
+                {/* Simulated 16:9 Canvas snippet with Brand Pill */}
+                <div className="relative aspect-[16/9] rounded-xl overflow-hidden bg-slate-900 border border-white/10 flex items-start p-3 shadow-inner">
+                  {/* Background backdrop gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-tr from-black/80 via-slate-900 to-amber-950/40" />
+
+                  {/* The actual Brand Pill */}
+                  <div className="relative z-10 flex items-center gap-2.5 px-3 py-2 rounded-xl bg-black/75 backdrop-blur-md border border-white/20 shadow-xl max-w-full">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b] shrink-0 animate-pulse" />
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-xs font-black tracking-wider text-white truncate font-sans">
+                        {brandLine1 || 'YOUR CHANNEL NAME'}
+                      </span>
+                      {brandLine2 && (
+                        <span className="text-[10px] font-bold tracking-widest text-amber-300 uppercase truncate">
+                          {brandLine2}
+                        </span>
+                      )}
+                      {brandLine3 && (
+                        <span className="text-[9px] font-medium tracking-wide text-slate-300 truncate">
+                          {brandLine3}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-400 mt-2 text-center">
+                নিচের <b>"Save Changes"</b> বাটনে চাপ দিলে এটি স্থায়ীভাবে সেভ থাকবে।
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Section 4: General Preferences & Timezone */}
+        {/* Section 5: General Preferences & Timezone */}
         <div className="p-5 rounded-2xl bg-[#0c101a] border border-white/10 space-y-4 shadow-xl">
           <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2 border-b border-white/5 pb-3">
             <Globe className="w-4 h-4 text-indigo-400" />
@@ -472,9 +782,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </p>
                     </div>
                     <a
-                      href="/api/download-zip"
+                      href={`/api/download-zip?t=${Date.now()}`}
                       download="htdocs.zip"
-                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-400 hover:to-teal-500 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition shrink-0"
+                      onClick={(e) => {
+                        // Dynamically refresh href with fresh timestamp so repeated clicks never get browser cached zip
+                        (e.currentTarget as HTMLAnchorElement).href = `/api/download-zip?t=${Date.now()}`;
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-400 hover:to-teal-500 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition shrink-0 cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
                       <span>Download htdocs.zip</span>

@@ -67,7 +67,19 @@ interface PostFormatParams {
   promotionText?: string;
   promotionUrl?: string;
   mainChannelLink?: string;
+  genreChannels?: { name: string; inviteLink?: string; username?: string }[];
   emojifyStyle?: EmojifyStyle;
+}
+
+export function formatChannelLink(raw?: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith('+')) return `https://t.me/+${trimmed.slice(1)}`;
+  if (trimmed.startsWith('@')) return `https://t.me/${trimmed.slice(1)}`;
+  if (trimmed.startsWith('t.me/')) return `https://${trimmed}`;
+  return `https://t.me/${trimmed}`;
 }
 
 /**
@@ -197,6 +209,7 @@ export function generateHubCaption(params: PostFormatParams): string {
     imdbRating,
     qualities,
     mainChannelLink = 'https://t.me/MovaDetaOfficial',
+    genreChannels = [],
     emojifyStyle = 'ultra'
   } = params;
 
@@ -248,8 +261,29 @@ export function generateHubCaption(params: PostFormatParams): string {
   }
 
   caption += `${divider}\n`;
-  caption += `📥 <b>Get Download Links From Our Main Channel! 👇👇</b>\n\n`;
-  caption += `<a href="${mainChannelLink.trim()}">👉 <b>Click Here to Join & Download</b> 💞</a>`;
+
+  // Build Genre Channel Links (Invite links have top priority so visitors can directly join)
+  const validChannelsWithLinks = genreChannels
+    .map((c) => {
+      const link = formatChannelLink(c.inviteLink || c.username);
+      return { name: c.name, link };
+    })
+    .filter((c) => Boolean(c.link));
+
+  if (validChannelsWithLinks.length > 1) {
+    caption += `📥 <b>Get Download Links From Genre Channels: 👇👇</b>\n\n`;
+    validChannelsWithLinks.forEach((c) => {
+      caption += `👉 <a href="${c.link}"><b>Click Here To Join & Download (${c.name})</b> 💞</a>\n`;
+    });
+  } else if (validChannelsWithLinks.length === 1) {
+    const target = validChannelsWithLinks[0];
+    caption += `📥 <b>Get Download Links From Our Channel! 👇👇</b>\n\n`;
+    caption += `<a href="${target.link}">👉 <b>Click Here to Join & Download (${target.name})</b> 💞</a>`;
+  } else {
+    const fallbackLink = formatChannelLink(mainChannelLink) || 'https://t.me/MovaDetaOfficial';
+    caption += `📥 <b>Get Download Links From Our Main Channel! 👇👇</b>\n\n`;
+    caption += `<a href="${fallbackLink}">👉 <b>Click Here to Join & Download</b> 💞</a>`;
+  }
 
   return caption.trim();
 }

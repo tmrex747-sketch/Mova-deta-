@@ -31,17 +31,18 @@ export const defaultSettings: AppSettings = {
   pinLockEnabled: false,
   pinCode: '',
   timezone: 'Asia/Dhaka',
-  isDemoMode: false
+  isDemoMode: false,
+  canvasBrandingName: 'MOVA DETA CINEMA'
 };
 
 export const defaultGenreChannels: GenreChannel[] = [
-  { id: 'gc-1', name: 'Mova Deta Action', username: 'MovaAction', chatId: '@MovaAction', genreLabel: '#Action', isPrivate: false, active: true },
-  { id: 'gc-2', name: 'Mova Deta Thriller', username: 'MovaThriller', chatId: '@MovaThriller', genreLabel: '#Thriller', isPrivate: false, active: true },
-  { id: 'gc-3', name: 'Mova Deta Romance', username: 'MovaRomance', chatId: '@MovaRomance', genreLabel: '#Romance', isPrivate: false, active: true }
+  { id: 'gc-1', name: 'Mova Deta Action', username: 'MovaAction', chatId: '@MovaAction', inviteLink: 'https://t.me/MovaAction', genreLabel: '#Action', isPrivate: false, active: true },
+  { id: 'gc-2', name: 'Mova Deta Thriller', username: 'MovaThriller', chatId: '@MovaThriller', inviteLink: 'https://t.me/MovaThriller', genreLabel: '#Thriller', isPrivate: false, active: true },
+  { id: 'gc-3', name: 'Mova Deta Romance', username: 'MovaRomance', chatId: '@MovaRomance', inviteLink: 'https://t.me/MovaRomance', genreLabel: '#Romance', isPrivate: false, active: true }
 ];
 
 export const defaultHubChannels: HubChannel[] = [
-  { id: 'hub-1', name: 'Mova Deta Main Hub', username: 'MovaHub', chatId: '@MovaHub', isPrivate: false, active: true }
+  { id: 'hub-1', name: 'Mova Deta Main Hub', username: 'MovaHub', chatId: '@MovaHub', inviteLink: 'https://t.me/MovaHub', isPrivate: false, active: true }
 ];
 
 export const defaultShorteners: Shortener[] = [

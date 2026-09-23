@@ -1,0 +1,16 @@
+[
+  {
+    "id": "promo-1",
+    "title": "Watch Hollywood Movies",
+    "text": "📍𝐖𝐀𝐂𝐓𝐇  𝐇𝐎𝐋𝐋𝐘𝐖𝐎𝐎𝐃  𝐌𝐎𝐕𝐈𝐄'ˢ👈",
+    "url": "https://t.me/HollywoodHindiZone",
+    "active": true
+  },
+  {
+    "id": "promo-2",
+    "title": "Bollywood Hits Club",
+    "text": "🔥 𝗝𝗢𝗜𝗡 𝗕𝗢𝗟𝗟𝗬𝗪𝗢𝗢𝗗 𝗛𝗜𝗧𝗦 𝗖𝗟𝗨𝗕 👈",
+    "url": "https://t.me/MovaDetaOfficial",
+    "active": false
+  }
+]

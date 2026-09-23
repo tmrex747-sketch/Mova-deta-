@@ -1,0 +1,14 @@
+[
+  {
+    "id": "hist-1",
+    "title": "AVATAR: THE WAY OF WATER",
+    "year": "2022",
+    "timestamp": 1726500000000,
+    "dateStr": "2026-09-16 19:30:00",
+    "genreChannelNames": ["Hollywood Hindi Movies", "Action & Thriller Cinema"],
+    "hubChannelNames": ["Mova Deta Main Network Hub"],
+    "status": "completed",
+    "successfulChannels": ["Hollywood Hindi Movies", "Action & Thriller Cinema", "Mova Deta Main Network Hub"],
+    "failedChannels": []
+  }
+]

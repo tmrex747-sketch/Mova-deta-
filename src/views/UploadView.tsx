@@ -245,9 +245,16 @@ export const UploadView: React.FC<UploadViewProps> = ({
     language: formData.language,
     imdbRating: formData.imdbRating,
     qualities: formData.qualities.filter((q) => q.enabled && q.url.trim().length > 0),
-    mainChannelLink: selectedGenreChannels[0]?.username
+    mainChannelLink: selectedGenreChannels[0]?.inviteLink
+      ? selectedGenreChannels[0].inviteLink.trim()
+      : selectedGenreChannels[0]?.username
       ? `https://t.me/${selectedGenreChannels[0].username.replace('@', '')}`
       : 'https://t.me/MovaDetaOfficial',
+    genreChannels: selectedGenreChannels.map((c) => ({
+      name: c.name,
+      inviteLink: c.inviteLink,
+      username: c.username
+    })),
     emojifyStyle: formData.emojifyStyle || 'ultra'
   });
 
@@ -304,7 +311,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
 
     setIsAutoGeneratingThumbnail(true);
     try {
-      const activeChannelName = selectedGenreChannels[0]?.name || selectedHubChannels[0]?.name || 'MOVA DETA CINEMA';
+      const activeChannelName = settings.canvasBrandingName?.trim() || selectedGenreChannels[0]?.name || selectedHubChannels[0]?.name || 'MOVA DETA CINEMA';
       const cleanRating = formData.imdbRating && formData.imdbRating.trim() ? formData.imdbRating.trim() : '7.8';
       const canvasThumb = await generateMovieThumbnail({
         backdropUrl: formData.posterUrl || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1280&q=80',
@@ -1381,7 +1388,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
         imdbRating={formData.imdbRating}
         language={formData.language}
         qualities={formData.qualities.filter((q) => q.enabled).map((q) => q.name)}
-        channelName={selectedGenreChannels[0]?.name || selectedHubChannels[0]?.name || 'MOVA DETA CINEMA'}
+        channelName={settings.canvasBrandingName?.trim() || selectedGenreChannels[0]?.name || selectedHubChannels[0]?.name || 'MOVA DETA CINEMA'}
         availableBackdrops={availableBackdrops}
         onApplyThumbnail={(dataUrl) => {
           setFormData((prev) => ({ ...prev, posterUrl: dataUrl }));
@@ -1389,6 +1396,13 @@ export const UploadView: React.FC<UploadViewProps> = ({
           setNotification({
             type: 'success',
             message: '✓ ক্যানভাস থেকে পারফেক্ট 16:9 লোগো থাম্বনেইল সফলভাবে সিলেক্ট করা হয়েছে!'
+          });
+        }}
+        onSaveDefaultBranding={async (newBrand) => {
+          await api.saveSettings({ canvasBrandingName: newBrand });
+          setNotification({
+            type: 'success',
+            message: `✓ "${newBrand.replace(/\n/g, ' ')}" ডিফল্ট চ্যানেল ব্র্যান্ডিং হিসেবে সেভ করা হয়েছে!`
           });
         }}
       />

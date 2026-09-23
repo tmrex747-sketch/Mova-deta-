@@ -1,0 +1,29 @@
+[
+  {
+    "id": "gc-1",
+    "name": "Hollywood Hindi Movies",
+    "username": "HollywoodHindiZone",
+    "chatId": "@HollywoodHindiZone",
+    "genreLabel": "Hollywood / Hindi",
+    "isPrivate": false,
+    "active": true
+  },
+  {
+    "id": "gc-2",
+    "name": "Action & Thriller Cinema",
+    "username": "ActionThrillerCinema",
+    "chatId": "@ActionThrillerCinema",
+    "genreLabel": "Action / Thriller",
+    "isPrivate": false,
+    "active": true
+  },
+  {
+    "id": "gc-3",
+    "name": "South Hindi Dubbed",
+    "username": "SouthCinemaHD",
+    "chatId": "@SouthCinemaHD",
+    "genreLabel": "South Indian",
+    "isPrivate": false,
+    "active": true
+  }
+]

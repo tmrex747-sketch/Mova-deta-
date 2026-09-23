@@ -332,55 +332,97 @@ export const api = {
         .trim();
     }
 
+    const cleanApiKey = (settings.tmdbApiKey || '').trim().replace(/^['"]|['"]$/g, '');
+
+    const genreMap: Record<number, string> = {
+      28: '#Action', 12: '#Adventure', 16: '#Animation', 35: '#Comedy',
+      80: '#Crime', 99: '#Documentary', 18: '#Drama', 10751: '#Family',
+      14: '#Fantasy', 36: '#History', 27: '#Horror', 10402: '#Music',
+      9648: '#Mystery', 10749: '#Romance', 878: '#SciFi', 10770: '#TVMovie',
+      53: '#Thriller', 10752: '#War', 37: '#Western'
+    };
+
+    const formatTmdbMovie = (m: any): TMDBMovie => {
+      const year = m.release_date ? m.release_date.slice(0, 4) : '';
+      const backdrop = m.backdrop_path 
+        ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` 
+        : (m.poster_path ? `https://image.tmdb.org/t/p/w780${m.poster_path}` : '');
+      const poster = m.poster_path ? `https://image.tmdb.org/t/p/w780${m.poster_path}` : backdrop;
+      const genres = (m.genre_ids || []).map((id: number) => genreMap[id]).filter(Boolean);
+      return {
+        id: m.id,
+        title: m.title || m.original_title || 'Untitled',
+        year,
+        release_date: m.release_date || '',
+        backdrop_path: backdrop,
+        poster_path: poster,
+        imdb_rating: m.vote_average ? m.vote_average.toFixed(1) : '7.5',
+        genres: genres.length > 0 ? genres : ['#Action', '#Drama']
+      };
+    };
+
+    // 1. Try Backend Proxy with apiKey included
     try {
       const q = new URLSearchParams();
       q.set('action', 'search');
       if (cleaned) q.set('query', cleaned);
       if (category) q.set('category', category);
+      if (cleanApiKey) q.set('apiKey', cleanApiKey);
       const res = await safeFetch(`${API_BASE}/tmdb.php?${q.toString()}`);
       if (res.ok) {
         const json = await res.json();
         if (json.results && json.results.length > 0) {
-          return {
-            results: json.results,
-            source: json.source || 'magic_library',
-            cleanedQuery: json.cleanedQuery || cleaned
-          };
+          // If server successfully fetched live results, return immediately
+          if (json.source === 'tmdb_live' || !cleanApiKey) {
+            return {
+              results: json.results,
+              source: json.source || 'magic_library',
+              cleanedQuery: json.cleanedQuery || cleaned
+            };
+          }
         }
       }
     } catch {
       // Serverless/Vercel fallback
     }
 
-    if (settings.tmdbApiKey && cleaned) {
+    // 2. Direct Browser Fetch to TMDB (bypasses server curl blocks on InfinityFree)
+    if (cleanApiKey) {
       try {
-        const url = `https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(settings.tmdbApiKey)}&query=${encodeURIComponent(cleaned)}&include_adult=false`;
-        const r = await fetch(url);
+        const isBearer = cleanApiKey.startsWith('ey') || cleanApiKey.length > 45;
+        let endpoint = '';
+        if (cleaned) {
+          endpoint = `/search/movie?query=${encodeURIComponent(cleaned)}&include_adult=false`;
+        } else {
+          if (category === 'trending' || !category) {
+            endpoint = '/trending/movie/day';
+          } else if (category === 'top_rated') {
+            endpoint = '/movie/top_rated';
+          } else if (category === 'bollywood') {
+            endpoint = '/discover/movie?with_original_language=hi&sort_by=popularity.desc';
+          } else if (category === 'hollywood') {
+            endpoint = '/discover/movie?with_original_language=en&sort_by=popularity.desc';
+          } else if (category === 'south') {
+            endpoint = '/discover/movie?with_original_language=te|ta|ml|kn&sort_by=popularity.desc';
+          } else {
+            endpoint = '/movie/popular';
+          }
+        }
+        const sep = endpoint.includes('?') ? '&' : '?';
+        const url = isBearer
+          ? `https://api.themoviedb.org/3${endpoint}`
+          : `https://api.themoviedb.org/3${endpoint}${sep}api_key=${encodeURIComponent(cleanApiKey)}`;
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        if (isBearer) headers['Authorization'] = `Bearer ${cleanApiKey}`;
+
+        const r = await fetch(url, { headers });
         const data = await r.json();
-        if (data.results && data.results.length > 0) {
-          const genreMap: Record<number, string> = {
-            28: '#Action', 12: '#Adventure', 16: '#Animation', 35: '#Comedy',
-            80: '#Crime', 99: '#Documentary', 18: '#Drama', 10751: '#Family',
-            14: '#Fantasy', 36: '#History', 27: '#Horror', 10402: '#Music',
-            9648: '#Mystery', 10749: '#Romance', 878: '#SciFi', 10770: '#TVMovie',
-            53: '#Thriller', 10752: '#War', 37: '#Western'
-          };
-          const results: TMDBMovie[] = data.results.map((m: any) => ({
-            id: m.id,
-            title: m.title,
-            year: m.release_date ? m.release_date.slice(0, 4) : '',
-            release_date: m.release_date || '',
-            backdrop_path: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : (m.poster_path ? `https://image.tmdb.org/t/p/w780${m.poster_path}` : ''),
-            poster_path: m.poster_path ? `https://image.tmdb.org/t/p/w780${m.poster_path}` : '',
-            imdb_rating: m.vote_average ? m.vote_average.toFixed(1) : '7.5',
-            genres: (m.genre_ids || []).map((id: number) => genreMap[id]).filter(Boolean).length > 0
-              ? (m.genre_ids || []).map((id: number) => genreMap[id]).filter(Boolean)
-              : ['#Action', '#Drama']
-          }));
+        if (r.ok && data.results && data.results.length > 0) {
+          const results: TMDBMovie[] = data.results.map(formatTmdbMovie);
           return { results, source: 'tmdb_live', cleanedQuery: cleaned };
         }
       } catch (e) {
-        console.warn('Direct TMDB fetch error:', e);
+        console.warn('Direct TMDB browser fetch error:', e);
       }
     }
 
@@ -500,13 +542,20 @@ export const api = {
   // 5b. Fetch multiple 16:9 backdrop images for a movie
   async getTMDBMovieImages(movieIdOrTitle: string | number): Promise<string[]> {
     const settings = clientStorage.getSettings();
+    const cleanApiKey = (settings.tmdbApiKey || '').trim().replace(/^['"]|['"]$/g, '');
     const images: string[] = [];
 
     // If TMDB API key is available and we have a numeric movie ID
-    if (settings.tmdbApiKey && !isNaN(Number(movieIdOrTitle))) {
+    if (cleanApiKey && !isNaN(Number(movieIdOrTitle))) {
       try {
-        const url = `https://api.themoviedb.org/3/movie/${movieIdOrTitle}/images?api_key=${encodeURIComponent(settings.tmdbApiKey)}`;
-        const r = await fetch(url);
+        const isBearer = cleanApiKey.startsWith('ey') || cleanApiKey.length > 45;
+        const url = isBearer
+          ? `https://api.themoviedb.org/3/movie/${movieIdOrTitle}/images`
+          : `https://api.themoviedb.org/3/movie/${movieIdOrTitle}/images?api_key=${encodeURIComponent(cleanApiKey)}`;
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        if (isBearer) headers['Authorization'] = `Bearer ${cleanApiKey}`;
+
+        const r = await fetch(url, { headers });
         if (r.ok) {
           const data = await r.json();
           if (data.backdrops && Array.isArray(data.backdrops)) {
@@ -527,6 +576,7 @@ export const api = {
       const q = new URLSearchParams();
       q.set('action', 'images');
       q.set('id', String(movieIdOrTitle));
+      if (cleanApiKey) q.set('apiKey', cleanApiKey);
       const res = await safeFetch(`${API_BASE}/tmdb.php?${q.toString()}`);
       if (res.ok) {
         const json = await res.json();
@@ -552,6 +602,67 @@ export const api = {
     }
 
     return images;
+  },
+
+  // 5c. Test TMDB API Key Connection (Server proxy + Direct CORS fallback)
+  async testTMDBConnection(customKey?: string): Promise<{ success: boolean; isDemo?: boolean; message?: string; error?: string }> {
+    const settings = clientStorage.getSettings();
+    const apiKey = (customKey !== undefined ? customKey : (settings.tmdbApiKey || '')).trim().replace(/^['"]|['"]$/g, '');
+
+    if (!apiKey) {
+      return {
+        success: false,
+        isDemo: true,
+        error: 'কোনো TMDB API Key পাওয়া যায়নি। themoviedb.org থেকে API Key দিয়ে টেস্ট করুন।'
+      };
+    }
+
+    // 1. Try server proxy test
+    try {
+      const q = new URLSearchParams();
+      q.set('action', 'test');
+      q.set('apiKey', apiKey);
+      const res = await safeFetch(`${API_BASE}/tmdb.php?${q.toString()}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          return { success: true, isDemo: false, message: json.message || '✓ TMDB API সংযুক্ত ও কার্যকর!' };
+        }
+      }
+    } catch {
+      // Continue to direct browser check
+    }
+
+    // 2. Direct browser test against TMDB
+    try {
+      const isBearer = apiKey.startsWith('ey') || apiKey.length > 45;
+      const url = isBearer
+        ? 'https://api.themoviedb.org/3/configuration'
+        : `https://api.themoviedb.org/3/configuration?api_key=${encodeURIComponent(apiKey)}`;
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (isBearer) headers['Authorization'] = `Bearer ${apiKey}`;
+
+      const r = await fetch(url, { headers });
+      const data = await r.json();
+      if (r.ok && (data.images || data.change_keys)) {
+        return {
+          success: true,
+          isDemo: false,
+          message: '✓ TMDB API Key সফলভাবে যাচাই হয়েছে এবং লাইভ ডাটা সক্রিয় রয়েছে!'
+        };
+      }
+      return {
+        success: false,
+        isDemo: false,
+        error: data.status_message || `TMDB Error (${r.status}): ভুল API Key। themoviedb.org থেকে সঠিক v3 Key দিন।`
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        isDemo: false,
+        error: e.message || 'TMDB সার্ভারের সাথে সংযোগ স্থাপন করা যায়নি।'
+      };
+    }
   },
 
   // 6. Telegram Bot Gateway (Direct Telegram API calls support CORS for client browser!)

@@ -28,6 +28,7 @@ interface ThumbnailStudioModalProps {
   channelName?: string;
   availableBackdrops?: string[];
   onApplyThumbnail: (dataUrl: string) => void;
+  onSaveDefaultBranding?: (brandName: string) => Promise<void> | void;
 }
 
 export const ThumbnailStudioModal: React.FC<ThumbnailStudioModalProps> = ({
@@ -41,7 +42,8 @@ export const ThumbnailStudioModal: React.FC<ThumbnailStudioModalProps> = ({
   qualities = ['480p', '720p HEVC', '1080p'],
   channelName = 'MOVA DETA CINEMA',
   availableBackdrops = [],
-  onApplyThumbnail
+  onApplyThumbnail,
+  onSaveDefaultBranding
 }) => {
   const [backdrop, setBackdrop] = useState(initialBackdrop);
   const [backdropList, setBackdropList] = useState<string[]>([]);
@@ -56,6 +58,8 @@ export const ThumbnailStudioModal: React.FC<ThumbnailStudioModalProps> = ({
   const [generatedThumb, setGeneratedThumb] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSavingBrand, setIsSavingBrand] = useState(false);
+  const [brandSaved, setBrandSaved] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -300,16 +304,61 @@ export const ThumbnailStudioModal: React.FC<ThumbnailStudioModalProps> = ({
               />
             </div>
 
-            {/* Channel Branding */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-slate-400">Channel / Brand Pill</label>
-              <input
-                type="text"
+            {/* Channel Branding (Supports up to 3 lines) */}
+            <div className="space-y-1 sm:col-span-2 lg:col-span-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Channel Branding / Pill (সর্বোচ্চ ৩ লাইন পর্যন্ত সাপোর্ট)</span>
+                </label>
+                {onSaveDefaultBranding && (
+                  <button
+                    type="button"
+                    disabled={isSavingBrand || !channelBrand.trim()}
+                    onClick={async () => {
+                      setIsSavingBrand(true);
+                      try {
+                        await onSaveDefaultBranding(channelBrand.trim());
+                        setBrandSaved(true);
+                        setTimeout(() => setBrandSaved(false), 2500);
+                      } finally {
+                        setIsSavingBrand(false);
+                      }
+                    }}
+                    className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1 transition ${
+                      brandSaved
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border-amber-500/30'
+                    }`}
+                  >
+                    {brandSaved ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span>ডিফল্ট সেভ হয়েছে!</span>
+                      </>
+                    ) : isSavingBrand ? (
+                      <>
+                        <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                        <span>সেভ হচ্ছে...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>💾 Save as Default Branding</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+              <textarea
+                rows={2}
                 value={channelBrand}
                 onChange={(e) => setChannelBrand(e.target.value)}
-                placeholder="MOVA DETA CINEMA"
-                className="w-full px-3 py-2 rounded-xl bg-slate-950/80 border border-white/10 text-xs text-slate-100 focus:border-amber-500/50 outline-none"
+                placeholder="Line 1: MOVA DETA&#10;Line 2: CINEMA HUB&#10;Line 3: JOIN @CHANNEL"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950/80 border border-white/10 text-xs text-slate-100 font-mono focus:border-amber-500/50 outline-none resize-none leading-relaxed"
               />
+              <p className="text-[10px] text-slate-500">
+                💡 প্রতি লাইনে একটি করে টেক্সট লিখুন (সর্বোচ্চ ৩ লাইন)। "Save as Default Branding" চাপলে সবসময় স্বয়ংক্রিয়ভাবে এটি ক্যানভাসে লোড হবে।
+              </p>
             </div>
 
             {/* Darkness / Contrast Level (Dark effect fix) */}
