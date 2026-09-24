@@ -686,7 +686,17 @@ export const api = {
   // 6. Telegram Bot Gateway (Direct Telegram API calls support CORS for client browser!)
   async testTelegramConnection(botToken?: string): Promise<{ success: boolean; isDemo?: boolean; bot?: any; message?: string; error?: string }> {
     const settings = clientStorage.getSettings();
-    const token = (botToken || settings.telegramBotToken || '').trim();
+    let token = (botToken || settings.telegramBotToken || '').trim();
+
+    // Auto-clean token if user pasted URL or prefix
+    const urlMatch = token.match(/api\.telegram\.org\/bot([^/?#]+)/i);
+    if (urlMatch) {
+      token = urlMatch[1].trim();
+    }
+    if (/^bot\d+:[\w-]+/i.test(token)) {
+      token = token.slice(3).trim();
+    }
+    token = token.replace(/^['"]|['"]$/g, '').trim();
 
     if (!token) {
       return {
@@ -696,6 +706,7 @@ export const api = {
       };
     }
 
+    // Try server-side first (PHP / Express proxy)
     try {
       const res = await safeFetch(`${API_BASE}/telegram.php?action=test`, {
         method: 'POST',
@@ -706,17 +717,21 @@ export const api = {
         const text = await res.text();
         const trimmed = text.trim();
         if (trimmed.startsWith('{')) {
-          return JSON.parse(trimmed);
+          const parsed = JSON.parse(trimmed);
+          if (parsed && typeof parsed.success === 'boolean') {
+            return parsed;
+          }
         }
       }
     } catch {
-      // Vercel / Client-Side Direct Execution
+      // Vercel / Client-Side Direct Execution fallback
     }
 
+    // Direct Browser-to-Telegram Fetch (Works anywhere, including Vercel and local static)
     try {
       const r = await fetch(`https://api.telegram.org/bot${token}/getMe`);
       const d = await r.json();
-      if (d.ok) {
+      if (d && d.ok && d.result) {
         return {
           success: true,
           isDemo: false,
@@ -727,7 +742,7 @@ export const api = {
       return {
         success: false,
         isDemo: false,
-        error: d.description || 'Invalid Telegram Bot Token'
+        error: d?.description || 'Invalid Telegram Bot Token'
       };
     } catch (e: any) {
       return {

@@ -125,8 +125,14 @@ export default function App() {
           isDemo: res.isDemo ?? true
         });
       }
-    } catch (e) {
+      return res;
+    } catch (e: any) {
       setBotStatus({ connected: false, isDemo: true });
+      return {
+        success: false,
+        isDemo: false,
+        error: e.message || 'Telegram network request failed'
+      };
     }
   };
 

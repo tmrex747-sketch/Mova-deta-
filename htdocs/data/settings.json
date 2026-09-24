@@ -5,10 +5,7 @@
   "howToDownloadEnabled": true,
   "tmdbApiKey": "",
   "defaultLanguage": "Hindi",
-  "defaultGenres": [
-    "#Action",
-    "#Thriller"
-  ],
+  "defaultGenres": ["#Action", "#Thriller"],
   "autoPreview": true,
   "autoClearForm": false,
   "pinLockEnabled": false,

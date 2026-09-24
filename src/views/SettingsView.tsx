@@ -141,12 +141,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const handleTestBot = async () => {
-    const cleanToken = formState.telegramBotToken?.trim() || '';
+    let cleanToken = formState.telegramBotToken?.trim() || '';
+
+    // Auto-clean pasted token if user copied URL or "bot" prefix
+    const urlMatch = cleanToken.match(/api\.telegram\.org\/bot([^/?#]+)/i);
+    if (urlMatch) {
+      cleanToken = urlMatch[1].trim();
+    }
+    if (/^bot\d+:[\w-]+/i.test(cleanToken)) {
+      cleanToken = cleanToken.slice(3).trim();
+    }
+    cleanToken = cleanToken.replace(/^['"]|['"]$/g, '').trim();
+
     if (!cleanToken) {
       setBotTestResult({
         success: false,
         isDemo: true,
-        error: 'বট টোকেন খালি! দয়া করে @BotFather থেকে পাওয়া টোকেনটি এখানে পেস্ট করুন।'
+        error: 'বট টোকেন খালি! দয়া করে @BotFather থেকে পাওয়া টোকেনটি (যেমন: 123456:ABC-DEF...) এখানে পেস্ট করুন।'
       });
       return;
     }
@@ -154,12 +165,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setBotTestResult(null);
     try {
       const res = await onTestTelegram(cleanToken);
-      setBotTestResult(res);
-      if (res.success && res.bot?.username) {
+      const safeResult = res || { success: false, error: 'বট থেকে কোনো রেসপন্স পাওয়া যায়নি।' };
+      setBotTestResult(safeResult);
+      if (safeResult.success && safeResult.bot?.username) {
         const updated = { 
           ...formState, 
           telegramBotToken: cleanToken,
-          telegramBotUsername: `@${res.bot.username}` 
+          telegramBotUsername: `@${safeResult.bot.username}` 
         };
         setFormState(updated);
         await onSaveSettings(updated);
