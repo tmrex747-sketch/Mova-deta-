@@ -12,10 +12,12 @@ import {
   Clapperboard,
   Loader2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Tv
 } from 'lucide-react';
 import { TMDBMovie } from '../types';
 import { api } from '../services/api';
+import { clientStorage } from '../utils/clientStorage';
 
 interface TMDBMagicSearchProps {
   onSelectMovie: (movie: {
@@ -40,11 +42,14 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<TMDBMovie[]>([]);
   const [cleanedQuery, setCleanedQuery] = useState<string | null>(null);
+  const [source, setSource] = useState<string>('magic_library');
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [magicFeedback, setMagicFeedback] = useState<string | null>(null);
   const searchTimeoutRef = useRef<any>(null);
 
-  // Load movies whenever query or category changes
+  const hasApiKey = Boolean(clientStorage.getSettings().tmdbApiKey?.trim());
+
+  // Load movies/series whenever query or category changes
   useEffect(() => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
@@ -64,6 +69,7 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
     try {
       const res = await api.searchTMDB(q, cat);
       setResults(res.results || []);
+      setSource(res.source || 'magic_library');
       setCleanedQuery(res.cleanedQuery && res.cleanedQuery !== q ? res.cleanedQuery : null);
     } catch (e) {
       console.error('Magic Search error:', e);
@@ -75,32 +81,42 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
   const handleSelect = (movie: TMDBMovie) => {
     const backdrop = movie.backdrop_path || movie.poster_path;
     const cleanYear = movie.year || (movie.release_date ? movie.release_date.slice(0, 4) : '2024');
+    const isTv = movie.media_type === 'tv' || (movie.genres && movie.genres.includes('#WebSeries'));
 
-    // Guess language based on genres or movie title origin
+    // Guess language based on category or origin
     let detectedLang = 'Dual Audio';
     if (movie.category === 'bollywood') detectedLang = 'Hindi';
     else if (movie.category === 'south') detectedLang = 'Hindi + Multi';
     else if (movie.category === 'hollywood') detectedLang = 'Dual Audio (Eng-Hin)';
+    if (isTv && detectedLang === 'Dual Audio') detectedLang = 'Hindi / Dual Audio';
+
+    const cleanGenres = movie.genres && movie.genres.length > 0 
+      ? [...movie.genres] 
+      : (isTv ? ['#WebSeries', '#Drama'] : ['#Action', '#Drama']);
+    if (isTv && !cleanGenres.includes('#WebSeries') && !cleanGenres.includes('#Series')) {
+      cleanGenres.unshift('#WebSeries');
+    }
 
     onSelectMovie({
       title: movie.title.toUpperCase(),
       year: cleanYear,
       imdbRating: movie.imdb_rating || '7.5',
-      genres: movie.genres && movie.genres.length > 0 ? movie.genres : ['#Action', '#Drama'],
+      genres: cleanGenres,
       backdropUrl: backdrop,
       language: detectedLang,
       id: movie.id,
       backdrops: movie.backdrops
     });
 
-    setMagicFeedback(`✨ "${movie.title}" সফলভাবে লোড হয়েছে!`);
+    setMagicFeedback(`✨ ${isTv ? '📺 ওয়েব সিরিজ' : '🎬 মুভি'} "${movie.title}" সফলভাবে লোড হয়েছে!`);
     setTimeout(() => {
       setMagicFeedback(null);
     }, 3500);
   };
 
   const categories = [
-    { id: 'trending', label: '🔥 Trending', icon: Flame },
+    { id: 'trending', label: '🔥 All Trending', icon: Flame },
+    { id: 'tv_shows', label: '📺 Web Series', icon: Tv },
     { id: 'bollywood', label: '🎬 Bollywood', icon: Clapperboard },
     { id: 'hollywood', label: '🍿 Hollywood', icon: Film },
     { id: 'south', label: '⚔️ South Indian', icon: Globe },
@@ -116,16 +132,27 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
             <Sparkles className="w-4 h-4 text-black animate-spin-slow" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-extrabold text-amber-300 tracking-wide uppercase">
                 TMDB Magic Search
               </h3>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40">
-                AI Auto-Detect
+                🎬 Movie + 📺 Web Series
               </span>
+              {source === 'tmdb_live' ? (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Live TMDB
+                </span>
+              ) : (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  Offline Library
+                </span>
+              )}
             </div>
-            <p className="text-[11px] text-slate-400">
-              মুভির নাম, TMDB / IMDb লিংক বা টরেন্ট টাইটেল লিখলেই স্বয়ংক্রিয় ১৬:৯ পোস্ট ও ডাটা প্রস্তুত হবে।
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              মুভি বা ওয়েব সিরিজের নাম (যেমন: Mirzapur, Panchayat, Jawan), TMDB/IMDb লিংক বা টরেন্ট ফাইলনেম লিখুন।
             </p>
           </div>
         </div>
@@ -184,7 +211,7 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="ম্যাজিক সার্চ: সিনেমার নাম, TMDB / IMDb লিংক বা টাইটেল পেস্ট করুন (যেমন: Avatar, Jawan, Dune)..."
+                placeholder="ম্যাজিক সার্চ: মুভি বা ওয়েব সিরিজের নাম, লিংক বা রিলিজ ফাইলনেম (যেমন: Mirzapur, Panchayat, Jawan, Avatar)..."
                 className="w-full pl-10 pr-10 py-3 rounded-xl bg-[#090c14] border border-amber-500/40 text-slate-100 placeholder:text-slate-500 text-xs sm:text-sm focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 transition shadow-inner"
               />
               {query && (
@@ -202,7 +229,7 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
             {cleanedQuery && (
               <div className="flex items-center gap-1.5 text-[11px] text-amber-300/90 pl-1">
                 <Sparkles className="w-3 h-3 text-amber-400" />
-                <span>ম্যাজিক ক্লিনড টাইটেল: <b>"{cleanedQuery}"</b></span>
+                <span>ম্যাজিক ক্লিনড কিওয়ার্ড: <b>"{cleanedQuery}"</b></span>
               </div>
             )}
           </div>
@@ -233,11 +260,11 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
             })}
           </div>
 
-          {/* Results Grid / Horizontal Scroller */}
+          {/* Results Grid */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-[11px] text-slate-400">
               <span>
-                {query ? `ফলাফল: "${query}"` : `জনপ্রিয় সিনেমা (${results.length})`}
+                {query ? `ফলাফল: "${query}"` : `জনপ্রিয় মুভি ও ওয়েব সিরিজ (${results.length})`}
               </span>
               <span className="text-[10px] text-amber-400 font-mono">
                 ⚡ ক্লিক করলেই ফর্ম অটো-ফিল হবে
@@ -247,16 +274,22 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
             {loading ? (
               <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-400">
                 <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
-                <span className="text-xs">TMDB থেকে ম্যাজিক ডাটা অনুসন্ধান করা হচ্ছে...</span>
+                <span className="text-xs">TMDB থেকে মুভি ও ওয়েব সিরিজ অনুসন্ধান করা হচ্ছে...</span>
               </div>
             ) : results.length === 0 ? (
-              <div className="py-6 text-center text-xs text-slate-500 border border-dashed border-white/10 rounded-xl">
-                কোনো সিনেমা পাওয়া যায়নি। অন্য কোনো নাম দিয়ে সার্চ করুন।
+              <div className="py-6 text-center text-xs text-slate-500 border border-dashed border-white/10 rounded-xl space-y-1">
+                <p>কোনো মুভি বা সিরিজ পাওয়া যায়নি। টাইটেল ঠিক আছে কিনা যাচাই করুন।</p>
+                {!hasApiKey && (
+                  <p className="text-[11px] text-amber-400/80">
+                    💡 বিনামূল্যে TMDB API Key পেতে Settings এ যান।
+                  </p>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/10">
                 {results.map((m) => {
                   const img = m.backdrop_path || m.poster_path;
+                  const isTv = m.media_type === 'tv' || (m.genres && m.genres.includes('#WebSeries'));
                   return (
                     <div
                       key={m.id}
@@ -269,9 +302,24 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                           loading="lazy"
                         />
-                        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-bold text-amber-300 border border-amber-500/30">
-                          16:9
+                        {/* Movie vs Series Badge */}
+                        <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+                          {isTv ? (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-600/90 text-[10px] font-bold text-white border border-purple-400/40 shadow-sm flex items-center gap-1">
+                              <Tv className="w-2.5 h-2.5" />
+                              <span>Series</span>
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-600/90 text-[10px] font-bold text-white border border-blue-400/40 shadow-sm flex items-center gap-1">
+                              <Film className="w-2.5 h-2.5" />
+                              <span>Movie</span>
+                            </span>
+                          )}
+                          <span className="px-1 py-0.5 rounded bg-black/80 text-[9px] font-bold text-amber-300 border border-amber-500/30">
+                            16:9
+                          </span>
                         </div>
+
                         <div className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-bold text-amber-400 border border-amber-500/30">
                           <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                           <span>{m.imdb_rating || '7.5'}</span>
@@ -290,7 +338,9 @@ export const TMDBMagicSearch: React.FC<TMDBMagicSearchProps> = ({
                             {(m.genres || []).slice(0, 2).map((g, idx) => (
                               <span
                                 key={idx}
-                                className="text-[9px] px-1 py-0.2 rounded bg-white/5 text-slate-400"
+                                className={`text-[9px] px-1 py-0.2 rounded ${
+                                  g === '#WebSeries' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/5 text-slate-400'
+                                }`}
                               >
                                 {g}
                               </span>

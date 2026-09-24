@@ -121,6 +121,8 @@ export interface TMDBMovie {
   imdb_rating: string;
   genres: string[];
   category?: string;
+  media_type?: 'movie' | 'tv';
+  overview?: string;
   logo_path?: string;
   tagline?: string;
   backdrops?: string[]; // Multiple 16:9 images for browsing with < > buttons
